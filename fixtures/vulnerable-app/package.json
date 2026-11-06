@@ -1,0 +1,13 @@
+{
+  "name": "vulnerable-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Deliberately insecure app used to test Garde-Fou. Do not deploy.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "*",
+    "@supabase/supabase-js": "*",
+    "next": "*",
+    "openai": "*",
+    "stripe": "*"
+  }
+}
