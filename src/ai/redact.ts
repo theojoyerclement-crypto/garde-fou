@@ -11,9 +11,55 @@ export const REDACTED = '[REDACTED]';
 const SENSITIVE_NAME =
   /(?:key|secret|token|passw(?:or)?d|pwd|private|credential|auth|cookie|session|signature|salt|dsn)/i;
 
-/** `NAME = value`, `"name": "value"`, `name: 'value'` (value up to a delimiter). */
-const ASSIGNMENT =
-  /(\b[A-Za-z_$][\w$.-]*["']?\s*(?:=|:)\s*)(["'`]?)([^\s"'`,;)}\]]{3,})\2/g;
+/** `NAME =`, `"name":`, `name:` — the value is read by `valueEnd()`, not by the regex. */
+const ASSIGNMENT_LHS = /\b([A-Za-z_$][\w$.-]*)["']?\s*(?:=|:)[ \t]*/g;
+/** Values that are references, not secrets: keep code readable. */
+const ENV_REFERENCE = /^(?:process\.env|import\.meta\.env|Deno\.env)\b/;
+
+/**
+ * End of the value starting at `start`: up to the matching closing quote
+ * (whatever is inside, spaces included), or to the end of the line.
+ */
+function valueEnd(text: string, start: number): number {
+  const q = text[start];
+  if (q === '"' || q === "'" || q === '`') {
+    for (let i = start + 1; i < text.length; i++) {
+      if (text[i] === '\\') {
+        i++;
+        continue;
+      }
+      if (text[i] === q) return i + 1;
+      if (text[i] === '\n' && q !== '`') break;
+    }
+  }
+  const eol = text.indexOf('\n', start);
+  return eol < 0 ? text.length : eol;
+}
+
+interface Assignment {
+  start: number;
+  end: number;
+  value: string;
+}
+
+/** Every value assigned to a sensitive name, unless it is empty or an env reference. */
+function sensitiveAssignments(text: string): Assignment[] {
+  const out: Assignment[] = [];
+  for (const m of text.matchAll(ASSIGNMENT_LHS)) {
+    if (!SENSITIVE_NAME.test(m[1] ?? '')) continue;
+    const start = (m.index ?? 0) + m[0].length;
+    const end = valueEnd(text, start);
+    const value = text.slice(start, end);
+    const inner = value.replace(/^["'`]|["'`]$/g, '').trim();
+    if (!inner || ENV_REFERENCE.test(inner)) continue;
+    out.push({ start, end, value });
+  }
+  return out;
+}
+
+function isMasked(value: string): boolean {
+  return /^["'`]?\[REDACTED[^\]]*\]["'`]?$/.test(value.trim());
+}
 
 const PEM = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g;
 const JWT = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.?[A-Za-z0-9_-]*/g;
@@ -39,13 +85,13 @@ export function redactSecrets(text: string, opts: { envFile?: boolean } = {}): s
   out = out.replace(JWT, '[REDACTED:jwt]');
   out = out.replace(URL_CREDENTIALS, `$1${REDACTED}@`);
 
-  // 4. Values assigned to sensitive names, whatever they look like.
-  out = out.replace(ASSIGNMENT, (all, lhs: string, q: string, value: string) => {
-    if (!SENSITIVE_NAME.test(lhs) || value.startsWith('[REDACTED')) return all;
-    // Keep code references readable: process.env.X, import.meta.env.X, Deno.env.get(…).
-    if (/^(?:process\.env|import\.meta\.env|Deno\.env)\b/.test(value)) return all;
-    return `${lhs}${q}${REDACTED}${q}`;
-  });
+  // 4. Values assigned to sensitive names, whatever they look like: the whole
+  //    quoted string (spaces included) or the rest of the line.
+  for (const a of sensitiveAssignments(out).reverse()) {
+    if (isMasked(a.value)) continue;
+    const q = /^["'`]/.test(a.value) && a.value.length > 1 && a.value.endsWith(a.value[0] ?? '') ? (a.value[0] ?? '') : '';
+    out = `${out.slice(0, a.start)}${q}${REDACTED}${q}${out.slice(a.end)}`;
+  }
 
   // 5. Any long random-looking token left.
   out = out.replace(LONG_TOKEN, (tok) => (looksRandom(tok) ? REDACTED : tok));
@@ -53,9 +99,15 @@ export function redactSecrets(text: string, opts: { envFile?: boolean } = {}): s
   return out;
 }
 
-/** True when nothing that the detectors recognise as a secret is left. */
+/**
+ * Fail-closed check before sending: no detectable secret, no private key or
+ * JWT, and every value assigned to a sensitive name is masked.
+ */
 export function isRedacted(text: string): boolean {
   return (
-    detectSecrets(text).length === 0 && !new RegExp(PEM.source).test(text) && !new RegExp(JWT.source).test(text)
+    detectSecrets(text).length === 0 &&
+    !new RegExp(PEM.source).test(text) &&
+    !new RegExp(JWT.source).test(text) &&
+    sensitiveAssignments(text).every((a) => isMasked(a.value))
   );
 }

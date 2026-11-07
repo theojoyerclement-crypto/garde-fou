@@ -71,6 +71,29 @@ describe('redactSecrets', () => {
     expect(out).toContain('postgres://admin:[REDACTED]@db.example.com');
   });
 
+  it('masks whole quoted values (spaces included) and unquoted values to the end of the line', () => {
+    const text = [
+      'const password = "correct horse battery staple";',
+      "db_password: 'two words, a comma; and more'",
+      'API_SECRET = some value with spaces',
+      'const authToken = `multi',
+      'line secret`;',
+      'const sessionKey = "unterminated value here',
+    ].join('\n');
+    const out = redactSecrets(text);
+    for (const s of ['correct horse', 'battery staple', 'two words', 'and more', 'some value', 'with spaces', 'multi', 'line secret', 'unterminated']) {
+      expect(out).not.toContain(s);
+    }
+    expect(isRedacted(out)).toBe(true);
+    expect(out).toContain('const password = "[REDACTED]";');
+  });
+
+  it('fails closed: an unmasked sensitive assignment blocks sending', () => {
+    expect(isRedacted('const password = "hello world";')).toBe(false);
+    expect(isRedacted('const password = "[REDACTED]";')).toBe(true);
+    expect(isRedacted('const apiKey = process.env.OPENAI_API_KEY;')).toBe(true);
+  });
+
   it('masks every value of a .env file and keeps code readable', () => {
     expect(redactSecrets('PLAIN=hello\nexport OTHER = world', { envFile: true })).toBe('PLAIN=[REDACTED]\nexport OTHER =[REDACTED]');
     const code = 'const apiKey = process.env.OPENAI_API_KEY;\nconst model = "gpt-4o-mini";';
@@ -108,7 +131,8 @@ describe('--ai on fixtures/vulnerable-app (secrets masked BEFORE sending)', () =
     for (const req of sent) {
       const payload = req.system + req.user;
       for (const s of all) expect(payload).not.toContain(s);
-      expect(isRedacted(payload)).toBe(true);
+      expect(isRedacted(req.system)).toBe(true);
+      expect(isRedacted(req.user)).toBe(true);
       const excerpt = /<excerpt>\n([\s\S]*)\n<\/excerpt>/.exec(req.user)?.[1];
       if (excerpt) expect(excerpt.split('\n').length).toBeLessThanOrEqual(13);
     }
