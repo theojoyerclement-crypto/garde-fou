@@ -44,10 +44,41 @@ export interface LocalizedText {
   prompt: string;
 }
 
+/** C0/C1 controls (incl. ESC), zero-width and bidi override characters. */
+const UNSAFE_CHARS = new RegExp(
+  '[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2069\ufeff]',
+  'g',
+);
+const MAX_PARAM_LENGTH = 120;
+
+/**
+ * Params come from the audited project (file names, policy names, routes…),
+ * i.e. untrusted input: no terminal escape sequences, no line breaks, bounded length.
+ */
+export function cleanParam(value: string): string {
+  const s = value.replace(UNSAFE_CHARS, ' ').replace(/\s+/g, ' ').trim();
+  return s.length > MAX_PARAM_LENGTH ? `${s.slice(0, MAX_PARAM_LENGTH - 1)}…` : s;
+}
+
+/**
+ * Stricter cleaning for text pasted into an AI agent: only characters found in
+ * paths, identifiers and route patterns survive, so a crafted name cannot carry
+ * shell syntax ($, `, ;, |, &, quotes, <, >) into a command the agent writes.
+ */
+export function promptParam(value: string): string {
+  return cleanParam(value).replace(/[^\p{L}\p{N} ._/@+\-:,()[\]{}*=#]/gu, '_');
+}
+
+function mapParams(p: Record<string, string>, fn: (v: string) => string): Record<string, string> {
+  return Object.fromEntries(Object.entries(p).map(([k, v]) => [k, fn(v)]));
+}
+
 export function localizeFinding(f: Finding, lang: Lang): LocalizedText {
   const t = messages(lang).findings[f.messageId];
-  const p = { location: locationOf(f), ...f.params };
-  return { title: t.title(p), why: t.why(p), fix: t.fix(p), prompt: t.prompt(p) };
+  const raw = { location: locationOf(f), ...f.params };
+  const p = mapParams(raw, cleanParam);
+  const pp = mapParams(raw, promptParam);
+  return { title: t.title(p), why: t.why(p), fix: t.fix(p), prompt: t.prompt(pp) };
 }
 
 export interface RenderOptions {
@@ -87,7 +118,7 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
     for (const f of group) {
       const text = localizeFinding(f, opts.lang);
       out.push(`  ${sevColor[sev](icon[sev])} ${c.bold(text.title)}`);
-      const where = f.commit ? `${f.file ?? ''} (${m.ui.inHistory(f.commit)})` : locationOf(f);
+      const where = cleanParam(f.commit ? `${f.file ?? ''} (${m.ui.inHistory(f.commit)})` : locationOf(f));
       if (where.trim()) out.push(`    ${c.dim(where)}`);
       out.push(`    ${c.dim(`${m.ui.why} :`)} ${text.why}`);
       out.push(`    ${c.dim(`${m.ui.fix} :`)} ${text.fix}`);
