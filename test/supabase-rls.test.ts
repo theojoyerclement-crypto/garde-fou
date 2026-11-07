@@ -122,8 +122,16 @@ describe('supabase-rls detection is not bypassed', () => {
       'grant select on public.d to authenticated;',
       'create table public.f (id int);',
       'revoke grant option for all on public.f from anon, authenticated;',
+      'create table public.g (id int, email text);',
+      'revoke select (email), insert (email), update (email), delete on public.g from anon, authenticated;',
+      'create table public.h (id int);',
+      'revoke all on public.h from anon, authenticated;',
+      'grant select (id) on public.h to group anon;',
+      'create table public.i (id int);',
+      'revoke all on public.i from anon, authenticated;',
+      'alter table public.i owner to authenticated;',
     ].join('\n');
-    expect((await noRls(sql)).sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    expect((await noRls(sql)).sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']);
   });
 
   it('closes a table when the schema-wide revoke covers it', async () => {

@@ -218,6 +218,39 @@ function newTable(rls: boolean, loc: Loc | null): TableState {
   return { rls, loc, revoked: new Map() };
 }
 
+/**
+ * Table-level privileges of a GRANT / REVOKE list. Column-level items
+ * (`select (email)`) never close a table, but always reopen it: when in doubt,
+ * assume access.
+ */
+function parsePrivileges(text: string, revoke: boolean): string[] {
+  const items: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of text) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      items.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  items.push(cur);
+
+  const out = new Set<string>();
+  for (const raw of items) {
+    const item = raw.trim().toLowerCase();
+    const columns = item.includes('(');
+    if (columns && revoke) continue;
+    const word = item.split(/[\s(]/)[0] ?? '';
+    if (word === 'all') for (const p of TABLE_PRIVILEGES) out.add(p);
+    else if ((TABLE_PRIVILEGES as readonly string[]).includes(word)) out.add(word);
+  }
+  return [...out];
+}
+
 /** True when neither anon nor authenticated keeps any privilege on the table. */
 function isClosedToApi(t: TableState): boolean {
   return API_ROLES.every((r) => TABLE_PRIVILEGES.every((p) => t.revoked.get(r)?.has(p)));
@@ -322,6 +355,8 @@ function replay(
         }
         continue;
       }
+      // An API role that owns the table has every privilege: reopen it.
+      if (/\bowner\s+to\s+(?:anon|authenticated|public)\b/i.test(actions)) tables.get(key)?.revoked.clear();
       const rls = /\b(enable|disable)\s+row\s+level\s+security\b/i.exec(actions);
       if (!rls) continue;
       const enabled = rls[1]?.toLowerCase() === 'enable';
@@ -372,13 +407,10 @@ function replay(
     if ((m = RE_GRANT_OR_REVOKE.exec(s))) {
       if (/^revoke\s+grant\s+option\s+for\b/i.test(s)) continue; // privileges stay
       const revoke = m[1]?.toLowerCase() === 'revoke';
-      const privText = (m[2] ?? '').toLowerCase();
-      const privileges = /\ball\b/.test(privText)
-        ? [...TABLE_PRIVILEGES]
-        : TABLE_PRIVILEGES.filter((p) => new RegExp(String.raw`\b${p}\b`).test(privText));
+      const privileges = parsePrivileges(m[2] ?? '', revoke);
       const named = (m[4] ?? '')
         .split(',')
-        .map((r) => normalizeIdent(r.trim().split(/\s+/)[0] ?? ''));
+        .map((r) => normalizeIdent(r.trim().replace(/^group\s+/i, '').split(/\s+/)[0] ?? ''));
       // Granting to PUBLIC reopens access for everyone; revoking from PUBLIC
       // does not touch the privileges Supabase grants to anon / authenticated.
       const roles = API_ROLES.filter((r) => named.includes(r) || (!revoke && named.includes('public')));
