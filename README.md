@@ -40,6 +40,7 @@ seuls les noms et versions des paquets du `package-lock.json` sont envoyés, jam
 
 `npx gardefou --html` écrit `garde-fou-report.html` (ou le fichier indiqué) : une page autonome,
 sans ressource externe, lisible sur mobile, avec le score, les problèmes triés par gravité, un
+détails repliés, un même problème présent dans plusieurs fichiers regroupé en une carte, un
 bouton « Copier » pour chaque prompt et un lien « Signaler un faux positif » qui ouvre une issue
 GitHub pré-remplie **sans secret, chemin ni code**. Le rapport contient les clés masquées
 (`sk-proj-1f…DGqC`) : ne le commitez pas.
@@ -90,8 +91,8 @@ your AI coding tool, and a score out of 100. Detection never uses AI. By default
 access is the OSV dependency check (package names and versions only); `--offline` turns off all
 network access.
 
-- `--html [file]`: standalone HTML report (no external resource, mobile friendly) with copy
-  buttons and a "report a false positive" link that opens a pre-filled GitHub issue with no
+- `--html [file]`: standalone HTML report (no external resource, mobile friendly) with collapsed
+  details, repeated problems grouped into one card, copy buttons and a "report a false positive" link that opens a pre-filled GitHub issue with no
   secret, path or code. It contains masked keys: do not commit it.
 - `--ai [claude|openai|ollama]`: optional AI explanations of the 10 most severe findings, with a
   fix adapted to your code. Keys from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, `OLLAMA_HOST` for a
