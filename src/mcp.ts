@@ -1,5 +1,5 @@
 /**
- * `gardefou mcp`: Model Context Protocol server over stdio (newline-delimited
+ * `gardefou mcp` (`npx @gardefou/cli mcp`): Model Context Protocol server over stdio (newline-delimited
  * JSON-RPC 2.0), so an AI agent (Claude Code, Cursor…) can run the audit.
  *
  * Read-only by construction: it calls runAudit() (the same scanner as the CLI)

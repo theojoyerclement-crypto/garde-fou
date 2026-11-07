@@ -74,7 +74,7 @@ function reportLines(result: AuditResult, lang: Lang): Line[] {
   const m = messages(lang);
   const target = DEMO_TARGET[lang];
   const lines: Line[] = [];
-  lines.push([{ text: `$ npx gardefou ${target}`, color: COLORS.prompt }]);
+  lines.push([{ text: `$ npx @gardefou/cli ${target}`, color: COLORS.prompt }]);
   lines.push([]);
   lines.push([{ text: m.ui.title(target), color: COLORS.text, bold: true }]);
   lines.push([{ text: [m.ui.filesScanned(result.filesScanned), m.ui.gitHistoryScanned].join(' · '), color: COLORS.dim }]);

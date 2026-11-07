@@ -5,10 +5,10 @@
 **Built your app with AI? In 10 seconds, Garde-Fou checks that it leaks neither your keys nor your data, before someone else finds out.**
 
 ```bash
-npx gardefou
+npx @gardefou/cli
 ```
 
-![Démo : npx gardefou trouve des clés d'API en clair et un fichier .env commité, score 0/100](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-fr.svg)
+![Démo : npx @gardefou/cli trouve des clés d'API en clair et un fichier .env commité, score 0/100](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-fr.svg)
 
 [Français](#français) · [English](#english)
 
@@ -19,13 +19,13 @@ npx gardefou
 1. Installez **Node.js** (version 20 ou plus) depuis [nodejs.org](https://nodejs.org) : bouton « LTS ».
 2. Ouvrez un terminal **dans le dossier de votre projet** (dans Cursor ou VS Code : menu
    *Terminal → Nouveau terminal*).
-3. Tapez `npx gardefou` puis Entrée.
+3. Tapez `npx @gardefou/cli` puis Entrée.
 
 Garde-Fou **ne modifie rien** et **n'envoie pas votre code** : tout se passe sur votre machine.
 Vous obtenez un score sur 100 et la liste des problèmes, du plus grave au moins grave. Pour
 chacun : pourquoi c'est dangereux, comment corriger, et un **prompt à coller tel quel** dans
 Lovable, Cursor, Bolt ou Claude Code pour qu'il corrige à votre place. Préférez une page web ?
-`npx gardefou --html` crée `garde-fou-report.html`, à ouvrir dans votre navigateur.
+`npx @gardefou/cli --html` crée `garde-fou-report.html`, à ouvrir dans votre navigateur.
 
 ![Capture du rapport Garde-Fou](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/report-fr.svg)
 
@@ -62,7 +62,7 @@ seuls les noms et versions des paquets du `package-lock.json` sont envoyés, jam
 
 ### Rapport HTML (`--html`)
 
-`npx gardefou --html` écrit `garde-fou-report.html` (ou le fichier indiqué) : une page autonome,
+`npx @gardefou/cli --html` écrit `garde-fou-report.html` (ou le fichier indiqué) : une page autonome,
 sans ressource externe, lisible sur mobile, avec le score, les problèmes triés par gravité, un
 détails repliés, un même problème présent dans plusieurs fichiers regroupé en une carte, un
 bouton « Copier » pour chaque prompt et un lien « Signaler un faux positif » qui ouvre une issue
@@ -72,10 +72,10 @@ GitHub pré-remplie **sans secret, chemin ni code**. Le rapport contient les cl�
 ### Explications IA (`--ai`, optionnel)
 
 ```bash
-ANTHROPIC_API_KEY=… npx gardefou --ai          # Claude (ou OpenAI si seule OPENAI_API_KEY existe)
-npx gardefou --ai openai                         # OPENAI_API_KEY
-npx gardefou --ai ollama                         # modèle local (OLLAMA_HOST, défaut 127.0.0.1:11434)
-GARDEFOU_AI_MODEL=… npx gardefou --ai claude     # autre modèle (défaut : claude-opus-5-5 / gpt-4o-mini / llama3.2)
+ANTHROPIC_API_KEY=… npx @gardefou/cli --ai          # Claude (ou OpenAI si seule OPENAI_API_KEY existe)
+npx @gardefou/cli --ai openai                         # OPENAI_API_KEY
+npx @gardefou/cli --ai ollama                         # modèle local (OLLAMA_HOST, défaut 127.0.0.1:11434)
+GARDEFOU_AI_MODEL=… npx @gardefou/cli --ai claude     # autre modèle (défaut : claude-opus-5-5 / gpt-4o-mini / llama3.2)
 ```
 
 L'IA **n'ajoute ni ne retire aucun problème** et ne change ni la gravité ni le score : elle
@@ -85,7 +85,7 @@ passe dans les URL, valeurs des `.env`…) ; une requête qui contiendrait encor
 reconnaissable n'est pas envoyée. Sans clé, hors ligne ou en cas d'erreur, le rapport est
 identique, avec une simple mention. Les réponses de l'IA sont à vérifier.
 
-### Agents IA : serveur MCP (`gardefou mcp`)
+### Agents IA : serveur MCP (`npx @gardefou/cli mcp`)
 
 Claude Code, Cursor ou tout client MCP peut lancer l'audit lui-même. Le serveur (stdio) expose
 deux outils **en lecture seule**, qui ne modifient jamais vos fichiers :
@@ -94,11 +94,11 @@ deux outils **en lecture seule**, qui ne modifient jamais vos fichiers :
 - `explain_finding` (`messageId`, `params`, `file`, `line`) : risque, correctif et prompt de correction.
 
 ```bash
-claude mcp add gardefou -- npx gardefou mcp
+claude mcp add gardefou -- npx -y @gardefou/cli mcp
 ```
 
 ```json
-{ "mcpServers": { "gardefou": { "command": "npx", "args": ["gardefou", "mcp"] } } }
+{ "mcpServers": { "gardefou": { "command": "npx", "args": ["-y", "@gardefou/cli", "mcp"] } } }
 ```
 
 ### GitHub Action
@@ -146,19 +146,19 @@ publique (anon) permet de lire des données.
 ### Options
 
 ```bash
-npx gardefou                 # audite le dossier courant
-npx gardefou mon-projet      # audite un autre dossier
-npx gardefou --lang en       # messages en anglais (fr / en, détecté automatiquement sinon)
-npx gardefou --json          # sortie JSON (CI), avec textes et prompts localisés
-npx gardefou --no-history    # ne pas lire l'historique git
-npx gardefou --offline       # aucun accès réseau (ni OSV ni IA distante)
-npx gardefou --html          # rapport HTML autonome (garde-fou-report.html)
-npx gardefou --ai            # explications IA (Claude, OpenAI ou Ollama), optionnel
-npx gardefou --verbose       # liste les dépendances ignorées (build, dev…) et leurs failles connues
-npx gardefou --fail-on critical   # code 1 seulement à partir de cette gravité (défaut : high)
-npx gardefou --markdown resume.md # résumé Markdown sans secret (CI)
-npx gardefou --supabase-live      # test Supabase en direct, lecture seule (voir plus haut)
-npx gardefou mcp             # serveur MCP pour les agents IA
+npx @gardefou/cli                 # audite le dossier courant
+npx @gardefou/cli mon-projet      # audite un autre dossier
+npx @gardefou/cli --lang en       # messages en anglais (fr / en, détecté automatiquement sinon)
+npx @gardefou/cli --json          # sortie JSON (CI), avec textes et prompts localisés
+npx @gardefou/cli --no-history    # ne pas lire l'historique git
+npx @gardefou/cli --offline       # aucun accès réseau (ni OSV ni IA distante)
+npx @gardefou/cli --html          # rapport HTML autonome (garde-fou-report.html)
+npx @gardefou/cli --ai            # explications IA (Claude, OpenAI ou Ollama), optionnel
+npx @gardefou/cli --verbose       # liste les dépendances ignorées (build, dev…) et leurs failles connues
+npx @gardefou/cli --fail-on critical   # code 1 seulement à partir de cette gravité (défaut : high)
+npx @gardefou/cli --markdown resume.md # résumé Markdown sans secret (CI)
+npx @gardefou/cli --supabase-live      # test Supabase en direct, lecture seule (voir plus haut)
+npx @gardefou/cli mcp             # serveur MCP pour les agents IA
 ```
 
 Code de sortie `1` s'il y a au moins un problème critique ou élevé (réglable avec `--fail-on`), `2` en cas d'erreur.
@@ -169,15 +169,15 @@ Code de sortie `1` s'il y a au moins un problème critique ou élevé (réglable
 
 1. Install **Node.js** (version 20 or later) from [nodejs.org](https://nodejs.org): the "LTS" button.
 2. Open a terminal **in your project folder** (in Cursor or VS Code: *Terminal → New Terminal*).
-3. Type `npx gardefou` and press Enter.
+3. Type `npx @gardefou/cli` and press Enter.
 
 Garde-Fou **changes nothing** and **does not send your code** anywhere: everything runs on your
 machine. You get a score out of 100 and the problems, most serious first. For each one: why it
 is dangerous, how to fix it, and a **prompt to paste as is** into Lovable, Cursor, Bolt or Claude
-Code so it fixes it for you. Prefer a web page? `npx gardefou --html` writes
+Code so it fixes it for you. Prefer a web page? `npx @gardefou/cli --html` writes
 `garde-fou-report.html`, to open in your browser.
 
-![Demo: npx gardefou finds hard-coded API keys and a committed .env file, score 0/100](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-en.svg)
+![Demo: npx @gardefou/cli finds hard-coded API keys and a committed .env file, score 0/100](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-en.svg)
 
 ![Garde-Fou report screenshot](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/report-en.svg)
 
@@ -196,8 +196,8 @@ your AI coding tool, and a score out of 100. Detection never uses AI. By default
 access is the OSV dependency check (package names and versions only); `--offline` turns off all
 network access.
 
-- `gardefou mcp`: MCP server (stdio) for AI agents, read-only tools `scan_project` and
-  `explain_finding` (`claude mcp add gardefou -- npx gardefou mcp`).
+- `npx @gardefou/cli mcp`: MCP server (stdio) for AI agents, read-only tools `scan_project` and
+  `explain_finding` (`claude mcp add gardefou -- npx -y @gardefou/cli mcp`).
 - GitHub Action: `uses: theojoyerclement-crypto/garde-fou@main` with `fail-on` (default
   `critical`), `lang`, `path`, `offline`, `history`; job summary without secrets, HTML report as
   an artifact (workflow example in the French section above).
@@ -219,9 +219,9 @@ network access.
   report is unchanged.
 
 ```bash
-npx gardefou [dir] [--lang fr|en] [--json] [--html [file]] [--ai [provider]] [--no-history] [--offline] [--no-color] [--verbose]
+npx @gardefou/cli [dir] [--lang fr|en] [--json] [--html [file]] [--ai [provider]] [--no-history] [--offline] [--no-color] [--verbose]
          [--fail-on <severity>] [--markdown <file>] [--supabase-live [--supabase-url <url>] [--supabase-key <key>] [--yes]]
-npx gardefou mcp
+npx @gardefou/cli mcp
 ```
 
 Exit code `1` when at least one critical or high issue is found (see `--fail-on`), `2` on error.

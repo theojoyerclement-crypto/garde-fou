@@ -221,7 +221,7 @@ export const en: Messages = {
       why: (p) =>
         `With nothing but the public (anon) key of your project ${p.host}, Garde-Fou could read at least one row of the ${p.table} table. That key ships in your site's code: any visitor can download the content of this table. Garde-Fou neither displayed nor stored the data.`,
       fix: (p) =>
-        `Enable Row Level Security (alter table public.${p.table} enable row level security;), then add a select policy limited to the owner (auth.uid() = user_id) or to the rows that are really public. Run gardefou --supabase-live again to check.`,
+        `Enable Row Level Security (alter table public.${p.table} enable row level security;), then add a select policy limited to the owner (auth.uid() = user_id) or to the rows that are really public. Run npx @gardefou/cli --supabase-live again to check.`,
       prompt: (p) =>
         `In my Supabase project, the public.${p.table} table can be read by anyone with the anon key (checked live). Write a migration that enables Row Level Security on this table and adds a select policy that only lets the signed-in user read their own rows (auth.uid() = the owner column), or only the public rows if the table holds public content. Do not touch other tables and explain the policy you chose.`,
     },

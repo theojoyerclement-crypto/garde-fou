@@ -7,9 +7,11 @@
 clés d'API en clair, `.env` commité, secrets exposés au navigateur, Supabase sans RLS,
 règles Firebase ouvertes, routes API sans auth, dépendances vulnérables.
 
-- Package npm : `gardefou` (le nom `garde-fou` est pris sur npm).
-- Commande officielle : **`npx gardefou [dossier]`**. `package.json` expose aussi l'alias
-  `garde-fou` (même fichier `dist/cli.js`) ; dans la doc et les messages, toujours écrire `npx gardefou`.
+- Package npm : **`@gardefou/cli`** (organisation npm `@gardefou` ; `gardefou` a été refusé par npm,
+  trop proche de `garde-fou`, déjà pris). `publishConfig.access: public`.
+- Commande officielle : **`npx @gardefou/cli [dossier]`**. Commandes installées (bin) : `gardefou` et
+  l'alias `garde-fou` (même fichier `dist/cli.js`, donc npx sait laquelle lancer) ; dans la doc et les
+  messages, toujours écrire `npx @gardefou/cli`. Serveur MCP : `npx -y @gardefou/cli mcp`.
 - Nom du produit : **Garde-Fou**.
 - Public : des développeurs débutants ou pressés. Les messages doivent être compréhensibles
   sans culture sécurité.

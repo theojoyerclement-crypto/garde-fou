@@ -221,7 +221,7 @@ export const fr: Messages = {
       why: (p) =>
         `Avec la seule clé publique (anon) de votre projet ${p.host}, Garde-Fou a pu lire au moins une ligne de la table ${p.table}. Cette clé est dans le code de votre site : n'importe quel visiteur peut donc télécharger le contenu de cette table. Garde-Fou n'a ni affiché ni enregistré ces données.`,
       fix: (p) =>
-        `Activez la Row Level Security (alter table public.${p.table} enable row level security;), puis ajoutez une policy select limitée au propriétaire (auth.uid() = user_id) ou aux seules lignes vraiment publiques. Relancez gardefou --supabase-live pour vérifier.`,
+        `Activez la Row Level Security (alter table public.${p.table} enable row level security;), puis ajoutez une policy select limitée au propriétaire (auth.uid() = user_id) ou aux seules lignes vraiment publiques. Relancez npx @gardefou/cli --supabase-live pour vérifier.`,
       prompt: (p) =>
         `Dans mon projet Supabase, la table public.${p.table} est lisible par n'importe qui avec la clé anon (vérifié en direct). Écris une migration qui active la Row Level Security sur cette table et ajoute une policy select qui ne laisse lire que les lignes de l'utilisateur connecté (auth.uid() = la colonne propriétaire), ou seulement les lignes publiques si la table contient du contenu public. Ne touche pas aux autres tables et explique-moi la policy choisie.`,
     },
