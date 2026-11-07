@@ -130,8 +130,20 @@ describe('supabase-rls detection is not bypassed', () => {
       'create table public.i (id int);',
       'revoke all on public.i from anon, authenticated;',
       'alter table public.i owner to authenticated;',
+      'create table public.j (id int);',
+      'revoke all on public.j from anon, authenticated;',
+      'alter table public.j owner to "anon";',
+      'create table public.k (id int);',
+      'revoke all on public.k from anon, authenticated;',
+      'alter table public.k owner to app_user;',
     ].join('\n');
-    expect((await noRls(sql)).sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']);
+    expect((await noRls(sql)).sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']);
+  });
+
+  it('reopens every table on REASSIGN OWNED to a non-admin role, not to postgres', async () => {
+    const base = 'create table public.a (id int);\nrevoke all on public.a from anon, authenticated;\n';
+    expect(await noRls(`${base}reassign owned by app to authenticated;`)).toEqual(['a']);
+    expect(await noRls(`${base}reassign owned by app to postgres;`)).toEqual([]);
   });
 
   it('closes a table when the schema-wide revoke covers it', async () => {

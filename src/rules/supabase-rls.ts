@@ -43,6 +43,7 @@ const RE_GRANT_OR_REVOKE = new RegExp(
   String.raw`^(revoke|grant)\s+(?:grant\s+option\s+for\s+)?([\s\S]+?)\s+on\s+(?:table\s+)?(${QNAME_LIST}|all\s+tables\s+in\s+schema\s+${ID})\s+(?:from|to)\s+([\s\S]+)$`,
   'i',
 );
+const RE_REASSIGN_OWNED = new RegExp(String.raw`^reassign\s+owned\s+by\s+[\s\S]+?\s+to\s+(${ID})`, 'i');
 /** Roles the Supabase API uses. A table is closed only when both lose every privilege. */
 const API_ROLES = ['anon', 'authenticated'] as const;
 const TABLE_PRIVILEGES = ['select', 'insert', 'update', 'delete'] as const;
@@ -355,8 +356,9 @@ function replay(
         }
         continue;
       }
-      // An API role that owns the table has every privilege: reopen it.
-      if (/\bowner\s+to\s+(?:anon|authenticated|public)\b/i.test(actions)) tables.get(key)?.revoked.clear();
+      // An owner has every privilege: unless it is an admin role, reopen the table.
+      const owner = new RegExp(String.raw`\bowner\s+to\s+(${ID})`, 'i').exec(actions);
+      if (owner && !ADMIN_ROLES.has(normalizeIdent(owner[1] ?? ''))) tables.get(key)?.revoked.clear();
       const rls = /\b(enable|disable)\s+row\s+level\s+security\b/i.exec(actions);
       if (!rls) continue;
       const enabled = rls[1]?.toLowerCase() === 'enable';
@@ -401,6 +403,11 @@ function replay(
     if ((m = RE_DROP_OR_ALTER_POLICY.exec(s))) {
       // An altered policy may no longer be open: never guess, forget it.
       policies.delete(`${tableKey(m[2] ?? '')}|${normalizeIdent(m[1] ?? '')}`);
+      continue;
+    }
+
+    if ((m = RE_REASSIGN_OWNED.exec(s))) {
+      if (!ADMIN_ROLES.has(normalizeIdent(m[1] ?? ''))) for (const t of tables.values()) t.revoked.clear();
       continue;
     }
 
