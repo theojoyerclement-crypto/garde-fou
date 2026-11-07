@@ -174,6 +174,10 @@ export const fr: Messages = {
       'osv.checked': 'dépendances vérifiées sur OSV',
       'osv.offline': 'dépendances non vérifiées (--offline)',
       'osv.error': 'OSV injoignable : dépendances non vérifiées',
+      'ai.used': 'explications IA ajoutées (à vérifier)',
+      'ai.noKey': 'IA désactivée : aucune clé (ANTHROPIC_API_KEY ou OPENAI_API_KEY)',
+      'ai.error': "IA indisponible pour certains problèmes : rapport sans explication IA",
+      'ai.offline': 'IA désactivée par --offline',
     },
     inHistory: (commit) => `historique git, commit ${commit}`,
     score: 'Score',
@@ -186,5 +190,32 @@ export const fr: Messages = {
           ? 'À corriger avant de mettre en ligne.'
           : 'Ne mettez pas ce projet en ligne en l’état.',
     targetNotFound: (t) => `Dossier introuvable : ${t}`,
+    aiExplanation: 'Explication IA (à vérifier)',
+    aiFix: 'Correctif adapté par l’IA (à vérifier)',
+    aiInvalid: (c) => `Fournisseur IA inconnu : ${c} (choix : claude, openai, ollama)`,
+    htmlWritten: (f) => `Rapport HTML écrit : ${f}`,
+    htmlError: (f) => `Impossible d'écrire le rapport HTML : ${f}`,
+  },
+  html: {
+    pageTitle: (t) => `Garde-Fou — rapport de ${t}`,
+    disclaimer:
+      'Aide à la vérification, pas une certification de sécurité. Garde-Fou repère des erreurs fréquentes ; il ne garantit pas que le projet est sûr.',
+    copy: 'Copier',
+    copied: 'Copié !',
+    falsePositive: 'Signaler un faux positif',
+    generated: (v, d) => `Généré par Garde-Fou ${v} le ${d}`,
+    issueTitle: (id) => `[faux positif] ${id}`,
+    issueBody: (f) =>
+      [
+        `**Règle** : ${f.ruleId} / ${f.messageId}`,
+        `**Gravité** : ${f.severity}`,
+        `**Version de Garde-Fou** : ${f.version}`,
+        `**Type de fichier** : ${f.fileType}`,
+        `**Détails (sans secret)** : ${f.details}`,
+        '',
+        '### Pourquoi est-ce un faux positif ?',
+        '',
+        '<!-- Expliquez ici, avec un exemple minimal. Ne collez JAMAIS de clé, de mot de passe ni de code confidentiel : remplacez les valeurs par xxx. -->',
+      ].join('\n'),
   },
 };

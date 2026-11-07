@@ -122,6 +122,11 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
       if (where.trim()) out.push(`    ${c.dim(where)}`);
       out.push(`    ${c.dim(`${m.ui.why} :`)} ${text.why}`);
       out.push(`    ${c.dim(`${m.ui.fix} :`)} ${text.fix}`);
+      if (f.ai) {
+        const indent = (s: string) => s.split(/\r?\n/).map((l) => `      ${l}`);
+        out.push(`    ${c.magenta(`${m.ui.aiExplanation} :`)}`, ...indent(f.ai.explanation));
+        out.push(`    ${c.magenta(`${m.ui.aiFix} :`)}`, ...indent(f.ai.fix));
+      }
       out.push(`    ${c.dim(`${m.ui.prompt} :`)}`);
       out.push(`    ${c.cyan(text.prompt)}`);
       out.push('');

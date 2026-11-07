@@ -34,5 +34,30 @@ export interface Messages {
     summary: (counts: Record<Severity, number>) => string;
     verdict: (score: number) => string;
     targetNotFound: (target: string) => string;
+    aiExplanation: string;
+    aiFix: string;
+    aiInvalid: (choice: string) => string;
+    htmlWritten: (file: string) => string;
+    htmlError: (file: string) => string;
   };
+  html: {
+    pageTitle: (target: string) => string;
+    disclaimer: string;
+    copy: string;
+    copied: string;
+    falsePositive: string;
+    generated: (version: string, date: string) => string;
+    issueTitle: (messageId: string) => string;
+    issueBody: (f: IssueFields) => string;
+  };
+}
+
+/** What a false-positive issue may contain: no secret, no path, no code. */
+export interface IssueFields {
+  ruleId: string;
+  messageId: string;
+  severity: string;
+  version: string;
+  fileType: string;
+  details: string;
 }

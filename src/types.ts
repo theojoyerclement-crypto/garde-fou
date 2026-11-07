@@ -33,6 +33,16 @@ export interface Finding {
   line?: number;
   /** Short commit hash, for findings coming from git history. */
   commit?: string;
+  /**
+   * Optional AI explanation (--ai). Never changes what is detected, the
+   * severity or the score. Untrusted text: always escaped / cleaned on output.
+   */
+  ai?: AiAdvice;
+}
+
+export interface AiAdvice {
+  explanation: string;
+  fix: string;
 }
 
 export interface ScannedFile {
@@ -64,7 +74,14 @@ export interface GitInfo {
 }
 
 /** Diagnostics shown in the report header (never findings). */
-export type NoteId = 'osv.checked' | 'osv.offline' | 'osv.error';
+export type NoteId =
+  | 'osv.checked'
+  | 'osv.offline'
+  | 'osv.error'
+  | 'ai.used'
+  | 'ai.noKey'
+  | 'ai.error'
+  | 'ai.offline';
 
 export interface OsvPackage {
   name: string;

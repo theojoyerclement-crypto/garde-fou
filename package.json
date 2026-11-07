@@ -46,6 +46,7 @@
     "url": "https://github.com/theojoyerclement-crypto/garde-fou/issues"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "commander": "^14.0.3",
     "ignore": "^7.0.14",
     "picocolors": "^1.1.1"
