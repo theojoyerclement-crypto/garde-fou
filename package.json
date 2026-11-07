@@ -20,6 +20,7 @@
     "dev": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "fixture": "tsx scripts/generate-fixture.ts",
+    "demo": "tsx scripts/demo.ts",
     "test": "vitest run",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },

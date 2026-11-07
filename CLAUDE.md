@@ -78,6 +78,9 @@ src/
 scripts/
   fake-keys.ts         générateurs de fausses clés (utilisés par les tests et la fixture)
   generate-fixture.ts  `npm run fixture` : écrit les fausses clés dans fixtures/vulnerable-app
+  demo.ts              `npm run demo` : docs/demo-{fr,en}.svg (animé) et docs/report-{fr,en}.svg (capture),
+                       depuis un vrai scan de vulnerable-app (fausses clés, masquées)
+.github/workflows/garde-fou.yml  l'Action (uses: ./) lancée sur le dépôt lui-même (fixtures/ ignoré)
 fixtures/vulnerable-app/   secrets + env (fausses clés générées, jamais commitées)
 fixtures/supabase-rls/     migrations sans RLS / policies using (true)
 fixtures/firebase/         règles Firestore, Storage, Realtime Database ouvertes

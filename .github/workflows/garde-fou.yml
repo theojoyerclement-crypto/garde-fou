@@ -1,0 +1,23 @@
+# Runs this repository's own Action (uses: ./) on itself, on a real runner.
+# fixtures/ (intentionally vulnerable test projects) is always skipped by the scanner.
+name: Garde-Fou
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./
+        with:
+          fail-on: critical
+          lang: fr

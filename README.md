@@ -1,12 +1,35 @@
 # Garde-Fou
 
-> Audit de sécurité local pour les projets générés par IA. · Local security audit for AI-generated projects.
+**Votre app a été créée avec une IA ? En 10 secondes, Garde-Fou vérifie qu'elle ne laisse fuiter ni vos clés, ni vos données, avant que quelqu'un d'autre ne le découvre.**
+
+**Built your app with AI? In 10 seconds, Garde-Fou checks that it leaks neither your keys nor your data, before someone else finds out.**
 
 ```bash
-npx gardefou [dossier]
+npx gardefou
 ```
 
+![Démo : npx gardefou trouve des clés exposées, une table Supabase ouverte et des règles Firebase ouvertes](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-fr.svg)
+
+[Français](#français) · [English](#english)
+
 ## Français
+
+### Lancer l'audit en 3 étapes
+
+1. Installez **Node.js** (version 20 ou plus) depuis [nodejs.org](https://nodejs.org) : bouton « LTS ».
+2. Ouvrez un terminal **dans le dossier de votre projet** (dans Cursor ou VS Code : menu
+   *Terminal → Nouveau terminal*).
+3. Tapez `npx gardefou` puis Entrée.
+
+Garde-Fou **ne modifie rien** et **n'envoie pas votre code** : tout se passe sur votre machine.
+Vous obtenez un score sur 100 et la liste des problèmes, du plus grave au moins grave. Pour
+chacun : pourquoi c'est dangereux, comment corriger, et un **prompt à coller tel quel** dans
+Lovable, Cursor, Bolt ou Claude Code pour qu'il corrige à votre place. Préférez une page web ?
+`npx gardefou --html` crée `garde-fou-report.html`, à ouvrir dans votre navigateur.
+
+![Capture du rapport Garde-Fou](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/report-fr.svg)
+
+### Ce qui est vérifié
 
 Votre app a été écrite par une IA (Cursor, Bolt, Lovable, v0, Claude Code…) ? Avant de la
 mettre en ligne, **Garde-Fou** vérifie en quelques secondes, **sur votre machine**, les erreurs
@@ -141,6 +164,24 @@ npx gardefou mcp             # serveur MCP pour les agents IA
 Code de sortie `1` s'il y a au moins un problème critique ou élevé (réglable avec `--fail-on`), `2` en cas d'erreur.
 
 ## English
+
+### Run the audit in 3 steps
+
+1. Install **Node.js** (version 20 or later) from [nodejs.org](https://nodejs.org): the "LTS" button.
+2. Open a terminal **in your project folder** (in Cursor or VS Code: *Terminal → New Terminal*).
+3. Type `npx gardefou` and press Enter.
+
+Garde-Fou **changes nothing** and **does not send your code** anywhere: everything runs on your
+machine. You get a score out of 100 and the problems, most serious first. For each one: why it
+is dangerous, how to fix it, and a **prompt to paste as is** into Lovable, Cursor, Bolt or Claude
+Code so it fixes it for you. Prefer a web page? `npx gardefou --html` writes
+`garde-fou-report.html`, to open in your browser.
+
+![Garde-Fou demo in English](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-en.svg)
+
+![Garde-Fou report screenshot](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/report-en.svg)
+
+### What it checks
 
 Your app was written by an AI? Before shipping it, **Garde-Fou** checks in seconds, **on your
 machine**, for the most expensive mistakes: hard-coded OpenAI / Anthropic / Stripe live /
