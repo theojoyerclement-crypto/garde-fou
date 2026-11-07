@@ -14,7 +14,8 @@ const SENSITIVE_NAME =
 /** `NAME =`, `"name":`, `name:` — the value is read by `valueEnd()`, not by the regex. */
 const ASSIGNMENT_LHS = /\b([A-Za-z_$][\w$.-]*)["']?\s*(?:=|:)[ \t]*/g;
 /** Values that are references, not secrets: keep code readable. */
-const ENV_REFERENCE = /^(?:process\.env|import\.meta\.env|Deno\.env)\b/;
+const ENV_REFERENCE =
+  /^(?:process\.env(?:\.[\w$]+|\[\s*(['"`])[\w$]+\1\s*\])|import\.meta\.env\.[\w$]+|Deno\.env\.get\(\s*(['"`])[\w$]+\2\s*\)!?)/;
 
 /**
  * End of the value starting at `start`: up to the matching closing quote
@@ -62,11 +63,21 @@ function sensitiveAssignments(text: string): Assignment[] {
     let start = m.index + m[0].length;
     while (start < text.length && /\s/.test(text[start] ?? '')) start++;
     if (start >= text.length) break;
-    const end = valueEnd(text, start);
-    re.lastIndex = Math.max(re.lastIndex, end);
+
+    // A bare env reference stays readable only when nothing else follows it
+    // on the line; otherwise the whole rest of the line is masked.
+    const eol = text.indexOf('\n', start);
+    const lineEnd = eol < 0 ? text.length : eol;
+    const ref = ENV_REFERENCE.exec(text.slice(start, lineEnd));
+    if (ref && /^[\s;,)\]}]*$/.test(text.slice(start + ref[0].length, lineEnd))) {
+      re.lastIndex = start + ref[0].length;
+      continue;
+    }
+    const end = ref ? lineEnd : valueEnd(text, start);
     const value = text.slice(start, end);
     const inner = value.replace(/^["'`]|["'`]$/g, '').trim();
-    if (!inner || ENV_REFERENCE.test(inner)) continue;
+    if (!inner) continue; // nothing to mask; keep scanning right after the name
+    re.lastIndex = Math.max(re.lastIndex, end);
     out.push({ start, end, value });
   }
   return out;

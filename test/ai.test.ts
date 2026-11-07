@@ -106,6 +106,21 @@ describe('redactSecrets', () => {
     expect(isRedacted('const password =\n  "hello there";')).toBe(false);
   });
 
+  it('an env reference never hides what follows it on the line', () => {
+    const text = [
+      'const k = process.env.X, password = "after env ref";',
+      "const apiKey = process.env.OPENAI_KEY ?? 'fallback-literal';",
+      "const t = Deno.env.get('T')!; const secret = 'deno tail';",
+      'const token = import.meta.env.VITE_URL',
+      'const empty = "", password2 = "after empty";',
+    ].join('\n');
+    const out = redactSecrets(text);
+    for (const s of ['after env ref', 'fallback-literal', 'deno tail', 'after empty']) expect(out).not.toContain(s);
+    expect(out).toContain('const token = import.meta.env.VITE_URL');
+    expect(isRedacted(out)).toBe(true);
+    expect(isRedacted('const k = process.env.X, password = "after env ref";')).toBe(false);
+  });
+
   it('fails closed: an unmasked sensitive assignment blocks sending', () => {
     expect(isRedacted('const password = "hello world";')).toBe(false);
     expect(isRedacted('const password = "[REDACTED]";')).toBe(true);
