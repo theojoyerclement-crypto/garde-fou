@@ -125,6 +125,24 @@ export const en: Messages = {
       prompt: (p) =>
         `The ${p.service} rules (${p.location}) are still the test-mode ones (request.time < timestamp.date(...)): anyone can read and write. Write real security rules: reads and writes restricted to the signed-in user on their own data (request.auth.uid), public reads only for truly public collections. Explain each rule.`,
     },
+    'api.noAuthPrivileged': {
+      title: (p) => `Route ${p.route} does not check who is calling (${p.framework})`,
+      why: () =>
+        'This route uses privileged access to your data (service_role key, admin SDK or database writes) but never checks the caller: anyone can call it directly and read, change or delete data.',
+      fix: () =>
+        'At the top of the handler, get the signed-in user (session, getUser(), token from the Authorization header) and return 401 if there is none, then check they are allowed to act on the requested data.',
+      prompt: (p) =>
+        `The route ${p.route} (${p.framework}, ${p.location}) uses privileged access (service_role key, admin SDK or database writes) without checking who is calling. Add an authentication check at the top of the handler using the auth system the project already uses (session, supabase.auth.getUser() with the token from the Authorization header, etc.): return 401 if nobody is signed in, then 403 if the user may not act on the requested resource. Only use the privileged access after these checks, and never in the browser.`,
+    },
+    'api.noAuthAI': {
+      title: (p) => `AI route ${p.route} is open to everyone (${p.framework})`,
+      why: () =>
+        'This route calls a paid AI API without checking who is calling. Anyone can hammer it on your bill: costs can reach hundreds of dollars within hours.',
+      fix: () =>
+        'Require a signed-in user (return 401 otherwise), add a per-user rate limit and cap the size of the messages sent to the model.',
+      prompt: (p) =>
+        `The route ${p.route} (${p.framework}, ${p.location}) calls a paid AI API without checking who is calling: anyone can spam it on my bill. Add an authentication check at the top of the handler using the auth system the project already uses (return 401 if nobody is signed in), then a per-user rate limit and a maximum size for the messages sent to the model. Keep the AI API key on the server only.`,
+    },
   },
   ui: {
     title: (target) => `Garde-Fou — audit of ${target}`,

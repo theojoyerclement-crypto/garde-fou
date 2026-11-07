@@ -17,7 +17,9 @@ export type MessageId =
   | 'supabase.openReadPolicy'
   | 'firebase.openWrite'
   | 'firebase.openRead'
-  | 'firebase.testMode';
+  | 'firebase.testMode'
+  | 'api.noAuthPrivileged'
+  | 'api.noAuthAI';
 
 export interface Finding {
   ruleId: string;

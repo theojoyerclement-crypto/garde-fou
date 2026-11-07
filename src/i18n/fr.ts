@@ -127,6 +127,24 @@ export const fr: Messages = {
       prompt: (p) =>
         `Les règles ${p.service} (${p.location}) sont encore celles du mode test (request.time < timestamp.date(...)) : tout le monde peut lire et écrire. Écris de vraies règles de sécurité : lecture et écriture réservées à l'utilisateur connecté sur ses propres données (request.auth.uid), lecture publique seulement pour les collections vraiment publiques. Explique-moi chaque règle.`,
     },
+    'api.noAuthPrivileged': {
+      title: (p) => `Route ${p.route} sans vérification d'identité (${p.framework})`,
+      why: () =>
+        "Cette route utilise un accès privilégié à vos données (clé service_role, SDK admin ou écriture en base) mais ne vérifie jamais qui l'appelle : n'importe qui peut l'appeler directement et lire, modifier ou supprimer des données.",
+      fix: () =>
+        "Au début du handler, récupérez l'utilisateur connecté (session, getUser(), jeton de l'en-tête Authorization) et renvoyez 401 s'il n'y en a pas, puis vérifiez qu'il a le droit d'agir sur la donnée demandée.",
+      prompt: (p) =>
+        `La route ${p.route} (${p.framework}, ${p.location}) utilise un accès privilégié (clé service_role, SDK admin ou écriture en base) sans vérifier qui l'appelle. Ajoute au début du handler une vérification d'authentification avec le système d'auth déjà utilisé dans le projet (session, supabase.auth.getUser() avec le jeton de l'en-tête Authorization, etc.) : renvoie 401 si personne n'est connecté, puis 403 si l'utilisateur n'a pas le droit d'agir sur la ressource demandée. N'utilise l'accès privilégié qu'après ces vérifications, et jamais côté navigateur.`,
+    },
+    'api.noAuthAI': {
+      title: (p) => `Route IA ${p.route} ouverte à tout le monde (${p.framework})`,
+      why: () =>
+        "Cette route appelle une API d'IA payante sans vérifier qui l'appelle. N'importe qui peut l'utiliser en boucle à vos frais : la facture peut atteindre des centaines d'euros en quelques heures.",
+      fix: () =>
+        "Exigez un utilisateur connecté (renvoyez 401 sinon), ajoutez une limite de requêtes par utilisateur et plafonnez la taille des messages envoyés au modèle.",
+      prompt: (p) =>
+        `La route ${p.route} (${p.framework}, ${p.location}) appelle une API d'IA payante sans vérifier qui l'appelle : n'importe qui peut la spammer à mes frais. Ajoute au début du handler une vérification d'authentification avec le système d'auth déjà utilisé dans le projet (renvoie 401 si personne n'est connecté), puis une limite de requêtes par utilisateur (rate limit) et une taille maximale pour les messages envoyés au modèle. Garde la clé de l'API IA côté serveur uniquement.`,
+    },
   },
   ui: {
     title: (target) => `Garde-Fou — audit de ${target}`,
