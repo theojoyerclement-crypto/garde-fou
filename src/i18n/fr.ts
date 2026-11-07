@@ -145,6 +145,20 @@ export const fr: Messages = {
       prompt: (p) =>
         `La route ${p.route} (${p.framework}, ${p.location}) appelle une API d'IA payante sans vérifier qui l'appelle : n'importe qui peut la spammer à mes frais. Ajoute au début du handler une vérification d'authentification avec le système d'auth déjà utilisé dans le projet (renvoie 401 si personne n'est connecté), puis une limite de requêtes par utilisateur (rate limit) et une taille maximale pour les messages envoyés au modèle. Garde la clé de l'API IA côté serveur uniquement.`,
     },
+    'deps.vulnerable': {
+      title: (p) =>
+        `${p.pkg}@${p.version} : ${p.count === '1' ? 'une vulnérabilité connue' : `${p.count} vulnérabilités connues`} (${p.ids})`,
+      why: () =>
+        "Cette version d'une dépendance de production a des failles publiées (base OSV). Les attaquants recherchent justement ces versions connues : ce sont souvent les premières failles exploitées.",
+      fix: (p) =>
+        p.fixed
+          ? `Mettez à jour ${p.pkg} vers la version ${p.fixed} ou plus récente. Si ce n'est pas une dépendance directe, mettez à jour le paquet qui l'installe (npm ls ${p.pkg}) ou ajoutez un « overrides » dans package.json.`
+          : `Aucune version corrigée n'est publiée : remplacez ${p.pkg} par une alternative maintenue, ou vérifiez que votre code n'utilise pas la partie vulnérable (https://osv.dev/vulnerability/${p.id}).`,
+      prompt: (p) =>
+        p.fixed
+          ? `La dépendance ${p.pkg} est en version ${p.version}, qui a des vulnérabilités connues (${p.ids}). Mets-la à jour vers ${p.fixed} ou plus récent : si c'est une dépendance directe, change sa version dans package.json ; sinon, mets à jour le paquet qui l'installe (npm ls ${p.pkg}) ou ajoute un overrides dans package.json. Régénère package-lock.json avec npm install, puis corrige ce qui casse si l'API a changé.`
+          : `La dépendance ${p.pkg}@${p.version} a des vulnérabilités connues (${p.ids}) sans version corrigée. Trouve où elle est utilisée (npm ls ${p.pkg}), propose-moi une alternative maintenue et fais la migration si elle est simple.`,
+    },
   },
   ui: {
     title: (target) => `Garde-Fou — audit de ${target}`,

@@ -19,7 +19,8 @@ export type MessageId =
   | 'firebase.openRead'
   | 'firebase.testMode'
   | 'api.noAuthPrivileged'
-  | 'api.noAuthAI';
+  | 'api.noAuthAI'
+  | 'deps.vulnerable';
 
 export interface Finding {
   ruleId: string;

@@ -8,6 +8,9 @@ import type { ScannedFile } from './types';
 export const ALWAYS_IGNORED_DIRS = new Set(['node_modules', '.git', 'fixtures']);
 
 export const MAX_FILE_SIZE = 1_000_000;
+/** Lockfiles are often bigger and are read by the dependencies rule. */
+export const MAX_LOCKFILE_SIZE = 50_000_000;
+const LARGE_FILES = new Set(['package-lock.json', 'npm-shrinkwrap.json']);
 
 interface Matcher {
   base: string;
@@ -115,7 +118,8 @@ function walk(dir: string, rootAbs: string, inherited: Matcher[], out: ScannedFi
 
     let buf: Buffer;
     try {
-      if (statSync(abs).size > MAX_FILE_SIZE) continue;
+      const max = LARGE_FILES.has(e.name) ? MAX_LOCKFILE_SIZE : MAX_FILE_SIZE;
+      if (statSync(abs).size > max) continue;
       buf = readFileSync(abs);
     } catch {
       continue;

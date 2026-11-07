@@ -143,6 +143,20 @@ export const en: Messages = {
       prompt: (p) =>
         `The route ${p.route} (${p.framework}, ${p.location}) calls a paid AI API without checking who is calling: anyone can spam it on my bill. Add an authentication check at the top of the handler using the auth system the project already uses (return 401 if nobody is signed in), then a per-user rate limit and a maximum size for the messages sent to the model. Keep the AI API key on the server only.`,
     },
+    'deps.vulnerable': {
+      title: (p) =>
+        `${p.pkg}@${p.version}: ${p.count === '1' ? 'one known vulnerability' : `${p.count} known vulnerabilities`} (${p.ids})`,
+      why: () =>
+        'This version of a production dependency has published vulnerabilities (OSV database). Attackers look for exactly these known versions: they are often the first flaws exploited.',
+      fix: (p) =>
+        p.fixed
+          ? `Upgrade ${p.pkg} to ${p.fixed} or later. If it is not a direct dependency, upgrade the package that pulls it in (npm ls ${p.pkg}) or add an "overrides" entry to package.json.`
+          : `No fixed version is published: replace ${p.pkg} with a maintained alternative, or make sure your code does not use the vulnerable part (https://osv.dev/vulnerability/${p.id}).`,
+      prompt: (p) =>
+        p.fixed
+          ? `The dependency ${p.pkg} is at version ${p.version}, which has known vulnerabilities (${p.ids}). Upgrade it to ${p.fixed} or later: if it is a direct dependency, change its version in package.json; otherwise upgrade the package that pulls it in (npm ls ${p.pkg}) or add an overrides entry to package.json. Regenerate package-lock.json with npm install, then fix whatever breaks if the API changed.`
+          : `The dependency ${p.pkg}@${p.version} has known vulnerabilities (${p.ids}) and no fixed version. Find where it is used (npm ls ${p.pkg}), suggest a maintained alternative and do the migration if it is simple.`,
+    },
   },
   ui: {
     title: (target) => `Garde-Fou — audit of ${target}`,

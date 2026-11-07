@@ -1,0 +1,13 @@
+{
+  "name": "vulnerable-deps",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Old dependency versions with known advisories, used to test Garde-Fou. Do not deploy.",
+  "dependencies": {
+    "lodash": "4.17.20",
+    "mkdirp-legacy": "1.0.0"
+  },
+  "devDependencies": {
+    "semver": "5.7.1"
+  }
+}

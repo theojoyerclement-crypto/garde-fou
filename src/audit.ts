@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { readGitInfo } from './git';
+import { createOsvClient } from './osv';
 import { computeScore, sortFindings } from './report';
 import { rules as defaultRules } from './rules';
 import { scanFiles } from './scanner';
@@ -45,7 +46,7 @@ export async function runAudit(target: string, opts: AuditOptions = {}): Promise
     root,
     files,
     git,
-    osv: opts.offline ? null : (opts.osv ?? null),
+    osv: opts.offline ? null : (opts.osv ?? createOsvClient()),
     notes: new Set(),
   };
 
