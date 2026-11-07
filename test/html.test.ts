@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { AuditResult } from '../src/audit';
-import { escapeHtml, falsePositiveUrl, renderHtml } from '../src/html';
+import { escapeHtml, falsePositiveUrl, groupFindings, renderHtml } from '../src/html';
 import { localizeFinding } from '../src/report';
 import type { Finding } from '../src/types';
 import { generateFixtureSecrets } from '../scripts/fake-keys';
@@ -97,8 +97,10 @@ describe('renderHtml on the fixtures', () => {
       expect(html).not.toMatch(/<link|@import|\ssrc=|url\(/i);
       const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1] ?? '');
       for (const h of hrefs) expect(h.startsWith('https://github.com/theojoyerclement-crypto/garde-fou/issues/new?')).toBe(true);
-      expect(html.match(/data-copy="/g)?.length ?? 0).toBe(result.findings.length);
-      expect(hrefs).toHaveLength(result.findings.length);
+      const groups = groupFindings(result.findings).length;
+      expect(html.match(/data-copy="/g)?.length ?? 0).toBe(groups);
+      expect(hrefs).toHaveLength(groups);
+      expect(html.match(/<details>/g)?.length ?? 0).toBe(groups);
       for (const f of result.findings) expect(html).toContain(escapeHtml(localizeFinding(f, lang).title));
       if (name === 'clean-app') expect(html).toContain(lang === 'fr' ? 'Aucun problème détecté.' : 'No issues found.');
     }
@@ -137,5 +139,56 @@ describe('false-positive issue link', () => {
       if (f.file && f.file.includes('/')) expect(text).not.toContain(f.file);
       expect(text).toContain('Ne collez JAMAIS de clé');
     }
+  });
+});
+
+describe('HTML cards', () => {
+  const sensitive = (file: string, line: number, name = 'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY'): Finding => ({
+    ruleId: 'env',
+    severity: 'high',
+    messageId: 'env.publicSensitive',
+    params: { name, prefix: 'NEXT_PUBLIC_' },
+    file,
+    line,
+  });
+
+  it('keeps explanation, fix and prompt collapsed by default', () => {
+    const html = renderHtml(fakeResult([sensitive('a.ts', 1)]), { lang: 'fr', date: DATE });
+    expect(html).toContain('<details>');
+    expect(html).not.toMatch(/<details[^>]*\sopen/);
+    const details = html.slice(html.indexOf('<details>'), html.indexOf('</details>'));
+    for (const part of ['Pourquoi', 'Correctif', 'data-copy=']) expect(details).toContain(part);
+    // Title and location stay visible outside the collapsed part.
+    const before = html.slice(0, html.indexOf('<details>'));
+    expect(before).toContain('Variable sensible exposée au navigateur');
+    expect(before).toContain('<li>a.ts:1</li>');
+  });
+
+  it('groups the same problem found in several files into one card listing every location', () => {
+    const result = fakeResult([
+      sensitive('.env.example', 3),
+      sensitive('src/lib/admin.ts', 7),
+      sensitive('src/other.ts', 2, 'VITE_OPENAI_API_KEY'),
+    ]);
+    expect(groupFindings(result.findings).map((g) => g.items.length)).toEqual([2, 1]);
+    for (const lang of ['fr', 'en'] as const) {
+      const html = renderHtml(result, { lang, date: DATE });
+      expect(html.match(/<article /g)).toHaveLength(2);
+      expect(html.match(/data-copy="/g)).toHaveLength(2);
+      expect(html).toContain('<ul class="locs"><li>.env.example:3</li><li>src/lib/admin.ts:7</li></ul>');
+      expect(html).toContain(lang === 'fr' ? '2 emplacements' : '2 locations');
+      const prompt = /<pre id="p0">([^<]*)<\/pre>/.exec(html)?.[1] ?? '';
+      expect(prompt).toContain('.env.example:3, src/lib/admin.ts:7');
+      expect(html).toContain(lang === 'fr' ? 'ÉLEVÉ (3)' : 'HIGH (3)');
+    }
+  });
+
+  it('caps the locations named in a grouped prompt', () => {
+    const many = Array.from({ length: 12 }, (_, i) => sensitive(`f${i}.ts`, 1));
+    const html = renderHtml(fakeResult(many), { lang: 'en', date: DATE });
+    expect(html.match(/<li>/g)).toHaveLength(12);
+    const prompt = /<pre id="p0">([^<]*)<\/pre>/.exec(html)?.[1] ?? '';
+    expect(prompt).toContain('f7.ts:1 +4');
+    expect(prompt).not.toContain('f8.ts');
   });
 });

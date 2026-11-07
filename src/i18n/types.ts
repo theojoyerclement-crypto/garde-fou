@@ -46,6 +46,8 @@ export interface Messages {
     copy: string;
     copied: string;
     falsePositive: string;
+    details: string;
+    locations: (n: number) => string;
     generated: (version: string, date: string) => string;
     issueTitle: (messageId: string) => string;
     issueBody: (f: IssueFields) => string;

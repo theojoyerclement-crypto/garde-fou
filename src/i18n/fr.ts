@@ -247,6 +247,8 @@ export const fr: Messages = {
     copy: 'Copier',
     copied: 'Copié !',
     falsePositive: 'Signaler un faux positif',
+    details: 'Explication, correctif et prompt',
+    locations: (n) => `${n} emplacements`,
     generated: (v, d) => `Généré par Garde-Fou ${v} le ${d}`,
     issueTitle: (id) => `[faux positif] ${id}`,
     issueBody: (f) =>

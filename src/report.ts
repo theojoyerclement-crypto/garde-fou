@@ -73,9 +73,10 @@ function mapParams(p: Record<string, string>, fn: (v: string) => string): Record
   return Object.fromEntries(Object.entries(p).map(([k, v]) => [k, fn(v)]));
 }
 
-export function localizeFinding(f: Finding, lang: Lang): LocalizedText {
+/** `location` overrides where the finding is (e.g. several files for one grouped issue). */
+export function localizeFinding(f: Finding, lang: Lang, location?: string): LocalizedText {
   const t = messages(lang).findings[f.messageId];
-  const raw = { location: locationOf(f), ...f.params };
+  const raw = { location: location ?? locationOf(f), ...f.params };
   const p = mapParams(raw, cleanParam);
   const pp = mapParams(raw, promptParam);
   return { title: t.title(p), why: t.why(p), fix: t.fix(p), prompt: t.prompt(pp) };

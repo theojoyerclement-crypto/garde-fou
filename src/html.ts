@@ -94,6 +94,12 @@ pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 button,.fp{font:inherit;font-size:.9rem;cursor:pointer;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);padding:6px 12px;min-height:36px}
 .fp{display:inline-block;margin-top:10px;text-decoration:none;color:var(--muted)}
 button:focus-visible,.fp:focus-visible{outline:2px solid var(--low);outline-offset:2px}
+.count{margin:0 0 4px;font-size:.85rem;color:var(--muted)}
+.locs{margin:0 0 8px;padding-left:18px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.85rem;color:var(--muted)}
+.locs li{overflow-wrap:anywhere}
+details{border-top:1px solid var(--border);margin-top:8px;padding-top:6px}
+summary{cursor:pointer;font-weight:600;padding:6px 0;min-height:36px}
+summary:focus-visible{outline:2px solid var(--low);outline-offset:2px}
 .empty{color:var(--ok);font-weight:600}
 footer{color:var(--muted);font-size:.85rem;margin-top:32px}
 `.trim();
@@ -120,6 +126,36 @@ export const CSP = [
   "base-uri 'none'",
   "form-action 'none'",
 ].join('; ');
+
+/** Locations named in a grouped prompt; the card itself lists them all. */
+export const MAX_PROMPT_LOCATIONS = 8;
+
+export interface FindingGroup {
+  items: Finding[];
+}
+
+/**
+ * Same problem (rule, message, severity, params) found in several places →
+ * one group, in first-seen order. Different params (another key, another
+ * table…) stay separate.
+ */
+export function groupFindings(findings: readonly Finding[]): FindingGroup[] {
+  const groups = new Map<string, FindingGroup>();
+  for (const f of findings) {
+    const params = Object.keys(f.params)
+      .sort()
+      .map((k) => [k, f.params[k]]);
+    const key = JSON.stringify([f.ruleId, f.messageId, f.severity, params]);
+    const g = groups.get(key);
+    if (g) g.items.push(f);
+    else groups.set(key, { items: [f] });
+  }
+  return [...groups.values()];
+}
+
+function whereOf(f: Finding, lang: Lang): string {
+  return cleanParam(f.commit ? `${f.file ?? ''} (${messages(lang).ui.inHistory(f.commit)})` : locationOf(f));
+}
 
 export interface HtmlOptions {
   lang: Lang;
@@ -182,26 +218,35 @@ export function renderHtml(result: AuditResult, opts: HtmlOptions): string {
 
   let n = 0;
   for (const sev of SEVERITY_ORDER) {
-    const group = result.findings.filter((f) => f.severity === sev);
-    if (group.length === 0) continue;
-    out.push(`<h2 class="sev-${sev}">${e(m.severity[sev as Severity])} (${group.length})</h2>`);
-    for (const f of group) {
+    const findings = result.findings.filter((f) => f.severity === sev);
+    if (findings.length === 0) continue;
+    out.push(`<h2 class="sev-${sev}">${e(m.severity[sev as Severity])} (${findings.length})</h2>`);
+    for (const g of groupFindings(findings)) {
+      const f = g.items[0] as Finding;
       const id = `p${n++}`;
-      const t = localizeFinding(f, opts.lang);
-      const where = cleanParam(f.commit ? `${f.file ?? ''} (${m.ui.inHistory(f.commit)})` : locationOf(f));
+      const wheres = g.items.map((x) => whereOf(x, opts.lang)).filter(Boolean);
+      // The prompt names every location (capped) so one paste fixes them all.
+      const shown = wheres.slice(0, MAX_PROMPT_LOCATIONS).join(', ');
+      const more = wheres.length > MAX_PROMPT_LOCATIONS ? ` +${wheres.length - MAX_PROMPT_LOCATIONS}` : '';
+      const t = localizeFinding(f, opts.lang, g.items.length > 1 ? `${shown}${more}` : undefined);
+      const ai = g.items.find((x) => x.ai)?.ai;
+
       out.push(`<article class="finding ${sev}">`, `<h3>${e(t.title)}</h3>`);
-      if (where) out.push(`<p class="loc">${e(where)}</p>`);
+      if (wheres.length > 1) out.push(`<p class="count">${e(m.html.locations(wheres.length))}</p>`);
+      if (wheres.length > 0) out.push(`<ul class="locs">${wheres.map((w) => `<li>${e(w)}</li>`).join('')}</ul>`);
       out.push(
+        '<details>',
+        `<summary>${e(m.html.details)}</summary>`,
         `<p><span class="label">${e(m.ui.why)} :</span> ${e(t.why)}</p>`,
         `<p><span class="label">${e(m.ui.fix)} :</span> ${e(t.fix)}</p>`,
       );
-      if (f.ai) {
+      if (ai) {
         out.push(
           '<div class="ai">',
           `<p class="label">${e(m.ui.aiExplanation)}</p>`,
-          multiline(f.ai.explanation),
+          multiline(ai.explanation),
           `<p class="label">${e(m.ui.aiFix)}</p>`,
-          multiline(f.ai.fix),
+          multiline(ai.fix),
           '</div>',
         );
       }
@@ -211,6 +256,7 @@ export function renderHtml(result: AuditResult, opts: HtmlOptions): string {
           `<button type="button" data-copy="${id}" data-label="${e(m.html.copy)}" data-done="${e(m.html.copied)}">${e(m.html.copy)}</button></div>`,
         `<pre id="${id}">${e(t.prompt)}</pre>`,
         '</div>',
+        '</details>',
         `<a class="fp" href="${e(falsePositiveUrl(f, opts.lang))}" target="_blank" rel="noopener noreferrer">${e(m.html.falsePositive)}</a>`,
         '</article>',
       );
