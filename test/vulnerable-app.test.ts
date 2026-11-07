@@ -1,10 +1,10 @@
 import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runAudit, type AuditResult } from '../src/audit';
+import type { AuditResult } from '../src/audit';
 import { renderReport } from '../src/report';
 import { fakeAnthropicKey, generateFixtureSecrets, type GeneratedSecrets } from '../scripts/fake-keys';
-import { cleanupTempDirs, commitAll, copyFixture, git, makeTempDir, writeFiles } from './helpers';
+import { audit, cleanupTempDirs, commitAll, copyFixture, git, makeTempDir, writeFiles } from './helpers';
 import type { Finding } from '../src/types';
 
 afterAll(cleanupTempDirs);
@@ -19,7 +19,7 @@ describe('fixtures/vulnerable-app inside a git repository', () => {
   let removedKey: string;
   let result: AuditResult;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     root = path.join(makeTempDir(), 'vulnerable-app');
     copyFixture(root);
     secrets = generateFixtureSecrets();
@@ -39,7 +39,7 @@ describe('fixtures/vulnerable-app inside a git repository', () => {
     rmSync(path.join(root, 'src/old-config.ts'));
     commitAll(root, 'remove secrets');
 
-    result = runAudit(root);
+    result = await audit(root);
   });
 
   it('reads git and its history', () => {
@@ -143,6 +143,7 @@ describe('fixtures/vulnerable-app inside a git repository', () => {
     expect(fr).toContain('ÉLEVÉ (');
     expect(fr).toContain('Score : 0/100');
     expect(fr).toContain('Pourquoi :');
+    expect(fr).toContain('Prompt à coller dans votre outil IA :');
     expect(fr).toContain('Variable sensible exposée au navigateur : VITE_OPENAI_API_KEY');
 
     const en = renderReport(result, { lang: 'en', color: false });
@@ -153,12 +154,12 @@ describe('fixtures/vulnerable-app inside a git repository', () => {
 });
 
 describe('fixtures/vulnerable-app without git', () => {
-  it('flags the unprotected .env without reporting its keys twice', () => {
+  it('flags the unprotected .env without reporting its keys twice', async () => {
     const root = path.join(makeTempDir(), 'vulnerable-app');
     copyFixture(root);
     writeFiles(root, generateFixtureSecrets().files);
 
-    const result = runAudit(root);
+    const result = await audit(root);
     expect(result.gitAvailable).toBe(false);
     expect(byMessage(result, 'env.notIgnored')).toEqual([
       expect.objectContaining({ severity: 'high', file: '.env' }),
@@ -169,7 +170,7 @@ describe('fixtures/vulnerable-app without git', () => {
 });
 
 describe('a clean project', () => {
-  it('gets 100/100 and no findings', () => {
+  it('gets 100/100 and no findings', async () => {
     const root = makeTempDir();
     const keys = generateFixtureSecrets();
     writeFiles(root, {
@@ -185,7 +186,7 @@ describe('a clean project', () => {
     git(root, 'init', '-q');
     commitAll(root, 'init');
 
-    const result = runAudit(root);
+    const result = await audit(root);
     expect(result.findings).toEqual([]);
     expect(result.score).toBe(100);
     expect(renderReport(result, { lang: 'fr', color: false })).toContain('Aucun problème détecté.');

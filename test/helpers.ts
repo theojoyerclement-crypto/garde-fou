@@ -3,9 +3,23 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runAudit, type AuditOptions, type AuditResult } from '../src/audit';
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const fixtureRoot = path.join(repoRoot, 'fixtures', 'vulnerable-app');
+export const fixturesDir = path.join(repoRoot, 'fixtures');
+export const fixtureRoot = path.join(fixturesDir, 'vulnerable-app');
+
+/** runAudit without network unless a fake OSV client is given. */
+export function audit(root: string, opts: AuditOptions = {}): Promise<AuditResult> {
+  return runAudit(root, { offline: !opts.osv, ...opts });
+}
+
+/** Copies fixtures/<name> to a fresh temp dir (no git) and returns its path. */
+export function copyNamedFixture(name: string): string {
+  const dest = path.join(makeTempDir(), name);
+  cpSync(path.join(fixturesDir, name), dest, { recursive: true });
+  return dest;
+}
 
 const tempDirs: string[] = [];
 

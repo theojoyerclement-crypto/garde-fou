@@ -3,7 +3,7 @@ import { Command, Option } from 'commander';
 import pc from 'picocolors';
 import { TargetNotFoundError, runAudit } from './audit';
 import { detectLang, isLang, messages, type Lang } from './i18n';
-import { renderReport } from './report';
+import { localizeFinding, renderReport } from './report';
 import { VERSION } from './version';
 
 const program = new Command();
@@ -18,13 +18,15 @@ program
   .addOption(new Option('--lang <lang>', 'langue / language').choices(['fr', 'en']))
   .option('--json', 'sortie JSON / JSON output')
   .option('--no-history', "ne pas analyser l'historique git / skip git history")
+  .option('--offline', 'aucun accès réseau : dépendances non vérifiées sur OSV / no network: skip the OSV dependency check')
   .option('--no-color', 'désactiver les couleurs / disable colors')
-  .action((dir: string, opts: { lang?: string; json?: boolean; history: boolean; color: boolean }) => {
+  .action(async (dir: string, opts: { lang?: string; json?: boolean; history: boolean; offline?: boolean; color: boolean }) => {
     const lang: Lang = opts.lang && isLang(opts.lang) ? opts.lang : detectLang();
     try {
-      const result = runAudit(dir, { history: opts.history });
+      const result = await runAudit(dir, { history: opts.history, offline: opts.offline ?? false });
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        const findings = result.findings.map((f) => ({ ...f, ...localizeFinding(f, lang) }));
+        process.stdout.write(`${JSON.stringify({ ...result, lang, findings }, null, 2)}\n`);
       } else {
         process.stdout.write(
           `${renderReport(result, { lang, color: opts.color && pc.isColorSupported })}\n`,
@@ -42,4 +44,4 @@ program
     }
   });
 
-program.parse();
+await program.parseAsync();

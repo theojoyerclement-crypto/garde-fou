@@ -31,6 +31,25 @@ export function countBySeverity(findings: readonly Finding[]): Record<Severity, 
   return c;
 }
 
+/** Where a finding lives, as shown to the user ("file:line", "file" or ""). */
+export function locationOf(f: Finding): string {
+  if (!f.file) return '';
+  return f.line ? `${f.file}:${f.line}` : f.file;
+}
+
+export interface LocalizedText {
+  title: string;
+  why: string;
+  fix: string;
+  prompt: string;
+}
+
+export function localizeFinding(f: Finding, lang: Lang): LocalizedText {
+  const t = messages(lang).findings[f.messageId];
+  const p = { location: locationOf(f), ...f.params };
+  return { title: t.title(p), why: t.why(p), fix: t.fix(p), prompt: t.prompt(p) };
+}
+
 export interface RenderOptions {
   lang: Lang;
   color: boolean;
@@ -54,7 +73,8 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
     : result.historyScanned
       ? m.ui.gitHistoryScanned
       : m.ui.gitHistorySkipped;
-  out.push(c.dim(`${m.ui.filesScanned(result.filesScanned)} · ${gitState}`), '');
+  const header = [m.ui.filesScanned(result.filesScanned), gitState, ...result.notes.map((n) => m.ui.notes[n])];
+  out.push(c.dim(header.join(' · ')), '');
 
   if (result.findings.length === 0) {
     out.push(c.green(`✔ ${m.ui.noIssues}`), '');
@@ -65,14 +85,14 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
     if (group.length === 0) continue;
     out.push(sevColor[sev](`${m.severity[sev]} (${group.length})`));
     for (const f of group) {
-      const text = m.findings[f.messageId];
-      out.push(`  ${sevColor[sev](icon[sev])} ${c.bold(text.title(f.params))}`);
-      const where = f.commit
-        ? `${f.file ?? ''} (${m.ui.inHistory(f.commit)})`
-        : `${f.file ?? ''}${f.line ? `:${f.line}` : ''}`;
+      const text = localizeFinding(f, opts.lang);
+      out.push(`  ${sevColor[sev](icon[sev])} ${c.bold(text.title)}`);
+      const where = f.commit ? `${f.file ?? ''} (${m.ui.inHistory(f.commit)})` : locationOf(f);
       if (where.trim()) out.push(`    ${c.dim(where)}`);
-      out.push(`    ${c.dim(`${m.ui.why} :`)} ${text.why(f.params)}`);
-      out.push(`    ${c.dim(`${m.ui.fix} :`)} ${text.fix(f.params)}`);
+      out.push(`    ${c.dim(`${m.ui.why} :`)} ${text.why}`);
+      out.push(`    ${c.dim(`${m.ui.fix} :`)} ${text.fix}`);
+      out.push(`    ${c.dim(`${m.ui.prompt} :`)}`);
+      out.push(`    ${c.cyan(text.prompt)}`);
       out.push('');
     }
   }

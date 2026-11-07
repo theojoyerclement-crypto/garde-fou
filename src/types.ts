@@ -53,13 +53,39 @@ export interface GitInfo {
   filesInHistory: Map<string, string>;
 }
 
+/** Diagnostics shown in the report header (never findings). */
+export type NoteId = 'osv.checked' | 'osv.offline' | 'osv.error';
+
+export interface OsvPackage {
+  name: string;
+  version: string;
+}
+
+export interface OsvVuln {
+  /** OSV id (GHSA-…, CVE-…). */
+  id: string;
+  /** Null when the advisory gives no usable severity. */
+  severity: Severity | null;
+  /** Smallest version that fixes it for the queried version, if known. */
+  fixed: string | null;
+}
+
+/** The only network access of Garde-Fou. Null in the context with --offline. */
+export interface OsvClient {
+  /** One array of vulnerabilities per package, in the same order. */
+  query(pkgs: readonly OsvPackage[]): Promise<OsvVuln[][]>;
+}
+
 export interface ScanContext {
   root: string;
   files: ScannedFile[];
   git: GitInfo | null;
+  osv: OsvClient | null;
+  /** Rules add diagnostics here (e.g. OSV unreachable). */
+  notes: Set<NoteId>;
 }
 
 export interface Rule {
   id: string;
-  run(ctx: ScanContext): Finding[];
+  run(ctx: ScanContext): Finding[] | Promise<Finding[]>;
 }

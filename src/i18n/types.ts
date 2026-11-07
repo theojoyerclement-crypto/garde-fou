@@ -1,4 +1,4 @@
-import type { MessageId, Severity } from '../types';
+import type { MessageId, NoteId, Severity } from '../types';
 
 type P = Record<string, string>;
 
@@ -8,6 +8,11 @@ export interface FindingText {
   why: (p: P) => string;
   /** Concrete fix. */
   fix: (p: P) => string;
+  /**
+   * Ready-to-paste prompt for an AI coding tool (Lovable, Cursor, Claude Code…).
+   * `p.location` is always set ("file:line", "file" or "").
+   */
+  prompt: (p: P) => string;
 }
 
 export interface Messages {
@@ -22,6 +27,8 @@ export interface Messages {
     noIssues: string;
     why: string;
     fix: string;
+    prompt: string;
+    notes: Record<NoteId, string>;
     inHistory: (commit: string) => string;
     score: string;
     summary: (counts: Record<Severity, number>) => string;
