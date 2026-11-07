@@ -88,6 +88,24 @@ describe('redactSecrets', () => {
     expect(out).toContain('const password = "[REDACTED]";');
   });
 
+  it('masks values on the next line and nested / overlapping assignments', () => {
+    const text = [
+      'const password =',
+      '  "next line secret";',
+      'token:',
+      '',
+      '   bare next line value',
+      '"password": "x apiKey: inner one; still secret" + suffixSecret',
+      'const a = { secret: "s1 s2", key: "k1 k2" };',
+    ].join('\n');
+    const out = redactSecrets(text);
+    for (const s of ['next line secret', 'bare next line value', 'inner one', 'still secret', 'suffixSecret', 's1 s2', 'k1 k2']) {
+      expect(out).not.toContain(s);
+    }
+    expect(isRedacted(out)).toBe(true);
+    expect(isRedacted('const password =\n  "hello there";')).toBe(false);
+  });
+
   it('fails closed: an unmasked sensitive assignment blocks sending', () => {
     expect(isRedacted('const password = "hello world";')).toBe(false);
     expect(isRedacted('const password = "[REDACTED]";')).toBe(true);

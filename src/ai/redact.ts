@@ -28,7 +28,13 @@ function valueEnd(text: string, start: number): number {
         i++;
         continue;
       }
-      if (text[i] === q) return i + 1;
+      if (text[i] === q) {
+        // Anything but a terminator after the closing quote (concatenation,
+        // another literal…) may still be secret: mask to the end of the line.
+        const eol = text.indexOf('\n', i);
+        const rest = text.slice(i + 1, eol < 0 ? text.length : eol);
+        return /^[\s;,)\]}]*$/.test(rest) ? i + 1 : eol < 0 ? text.length : eol;
+      }
       if (text[i] === '\n' && q !== '`') break;
     }
   }
@@ -42,13 +48,22 @@ interface Assignment {
   value: string;
 }
 
-/** Every value assigned to a sensitive name, unless it is empty or an env reference. */
+/**
+ * Every value assigned to a sensitive name, unless it is empty or an env
+ * reference. The value may start on a following line. Ranges never overlap:
+ * scanning resumes after each value, so a name inside a value is part of it.
+ */
 function sensitiveAssignments(text: string): Assignment[] {
   const out: Assignment[] = [];
-  for (const m of text.matchAll(ASSIGNMENT_LHS)) {
+  const re = new RegExp(ASSIGNMENT_LHS.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
     if (!SENSITIVE_NAME.test(m[1] ?? '')) continue;
-    const start = (m.index ?? 0) + m[0].length;
+    let start = m.index + m[0].length;
+    while (start < text.length && /\s/.test(text[start] ?? '')) start++;
+    if (start >= text.length) break;
     const end = valueEnd(text, start);
+    re.lastIndex = Math.max(re.lastIndex, end);
     const value = text.slice(start, end);
     const inner = value.replace(/^["'`]|["'`]$/g, '').trim();
     if (!inner || ENV_REFERENCE.test(inner)) continue;
