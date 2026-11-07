@@ -10,7 +10,8 @@ import type { Finding, Rule, ScanContext, ScannedFile } from '../types';
  * - permissive policy whose condition is literally `true`.
  *
  * Not reported (no false positives): tables of other schemas, temporary tables,
- * tables whose access is revoked from `anon` / `public`, policies dropped or
+ * tables on which every privilege is revoked from both `anon` and
+ * `authenticated` (and not granted back), policies dropped or
  * altered later, restrictive policies, policies limited to admin roles.
  */
 
@@ -18,10 +19,12 @@ const ID = String.raw`(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)`;
 const QNAME = String.raw`${ID}(?:\s*\.\s*${ID})?`;
 const QNAME_LIST = String.raw`${QNAME}(?:\s*,\s*${QNAME})*`;
 
+/** Unlogged tables are regular tables for the API: only temporary ones are skipped. */
 const RE_CREATE_TABLE = new RegExp(
-  String.raw`^create\s+(?:(?:global|local)\s+)?((?:temp|temporary|unlogged)\s+)?table\s+(?:if\s+not\s+exists\s+)?(${QNAME})`,
+  String.raw`^create\s+(?:(?:global|local)\s+)?((?:temp|temporary)\s+)?(?:unlogged\s+)?table\s+(?:if\s+not\s+exists\s+)?(${QNAME})`,
   'i',
 );
+const IDENT_CHAR = /[A-Za-z0-9_$]/;
 const RE_ALTER_TABLE = new RegExp(
   String.raw`^alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(${QNAME})\s+([\s\S]*)$`,
   'i',
@@ -35,10 +38,14 @@ const RE_DROP_OR_ALTER_POLICY = new RegExp(
   String.raw`^(?:drop|alter)\s+policy\s+(?:if\s+exists\s+)?(${ID})\s+on\s+(${QNAME})`,
   'i',
 );
-const RE_REVOKE = new RegExp(
-  String.raw`^revoke\s+[\s\S]+?\s+on\s+(?:table\s+)?(${QNAME_LIST}|all\s+tables\s+in\s+schema\s+${ID})\s+from\s+([\s\S]+)$`,
+/** `revoke <privileges> on <target> from <roles>` / `grant <privileges> on <target> to <roles>`. */
+const RE_GRANT_OR_REVOKE = new RegExp(
+  String.raw`^(revoke|grant)\s+(?:grant\s+option\s+for\s+)?([\s\S]+?)\s+on\s+(?:table\s+)?(${QNAME_LIST}|all\s+tables\s+in\s+schema\s+${ID})\s+(?:from|to)\s+([\s\S]+)$`,
   'i',
 );
+/** Roles the Supabase API uses. A table is closed only when both lose every privilege. */
+const API_ROLES = ['anon', 'authenticated'] as const;
+const TABLE_PRIVILEGES = ['select', 'insert', 'update', 'delete'] as const;
 
 /** Roles that bypass or administer RLS: an open policy for them only changes nothing. */
 const ADMIN_ROLES = new Set([
@@ -75,37 +82,53 @@ export function splitSql(src: string): SqlStatement[] {
       blank(i, j);
       i = j;
     } else if (ch === '/' && next === '*') {
+      // Unterminated constructs are left visible: PostgreSQL would reject the
+      // file anyway, and hiding the rest of it could hide real statements.
       const end = src.indexOf('*/', i + 2);
-      const j = end < 0 ? src.length : end + 2;
-      blank(i, j);
-      i = j;
+      if (end < 0) {
+        i += 2;
+        continue;
+      }
+      blank(i, end + 2);
+      i = end + 2;
     } else if (ch === "'") {
+      // E'…' strings use backslash escapes.
+      const escapes = /[eE]/.test(src[i - 1] ?? '') && !IDENT_CHAR.test(src[i - 2] ?? '');
       let j = i + 1;
+      let closed = false;
       while (j < src.length) {
+        if (escapes && src[j] === '\\') {
+          j += 2;
+          continue;
+        }
         if (src[j] === "'") {
           if (src[j + 1] === "'") {
             j += 2;
             continue;
           }
+          closed = true;
           break;
         }
         j++;
+      }
+      if (!closed) {
+        i++;
+        continue;
       }
       blank(i + 1, j);
       i = j + 1;
     } else if (ch === '"') {
       const end = src.indexOf('"', i + 1);
-      i = end < 0 ? src.length : end + 1;
-    } else if (ch === '$') {
+      i = end < 0 ? i + 1 : end + 1;
+    } else if (ch === '$' && !IDENT_CHAR.test(src[i - 1] ?? '')) {
       const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(src.slice(i, i + 64));
-      if (m) {
-        const end = src.indexOf(m[0], i + m[0].length);
-        const j = end < 0 ? src.length : end + m[0].length;
-        blank(i, j);
-        i = j;
-      } else {
+      const end = m ? src.indexOf(m[0], i + m[0].length) : -1;
+      if (!m || end < 0) {
         i++;
+        continue;
       }
+      blank(i, end + m[0].length);
+      i = end + m[0].length;
     } else {
       i++;
     }
@@ -187,6 +210,17 @@ interface TableState {
   rls: boolean;
   /** Where the table becomes unprotected (creation or `disable row level security`). */
   loc: Loc | null;
+  /** API role → privileges revoked from it on this table. */
+  revoked: Map<string, Set<string>>;
+}
+
+function newTable(rls: boolean, loc: Loc | null): TableState {
+  return { rls, loc, revoked: new Map() };
+}
+
+/** True when neither anon nor authenticated keeps any privilege on the table. */
+function isClosedToApi(t: TableState): boolean {
+  return API_ROLES.every((r) => TABLE_PRIVILEGES.every((p) => t.revoked.get(r)?.has(p)));
 }
 
 interface OpenPolicy {
@@ -211,16 +245,14 @@ export const supabaseRlsRule: Rule = {
 
     const tables = new Map<string, TableState>();
     const policies = new Map<string, OpenPolicy>();
-    const protectedTables = new Set<string>();
-    const protectedSchemas = new Set<string>();
 
-    for (const f of sqlFiles) replay(f, tables, policies, protectedTables, protectedSchemas);
+    for (const f of sqlFiles) replay(f, tables, policies);
 
     const findings: Finding[] = [];
     for (const [key, t] of tables) {
       if (t.rls || !t.loc) continue;
       if (!key.startsWith('public.')) continue;
-      if (protectedTables.has(key) || protectedSchemas.has('public')) continue;
+      if (isClosedToApi(t)) continue;
       findings.push({
         ruleId: 'supabase-rls',
         severity: 'critical',
@@ -257,8 +289,6 @@ function replay(
   f: ScannedFile,
   tables: Map<string, TableState>,
   policies: Map<string, OpenPolicy>,
-  protectedTables: Set<string>,
-  protectedSchemas: Set<string>,
 ): void {
   for (const st of splitSql(f.content)) {
     const s = st.sql;
@@ -266,11 +296,11 @@ function replay(
     let m: RegExpExecArray | null;
 
     if ((m = RE_CREATE_TABLE.exec(s))) {
-      if (m[1]) continue; // temporary / unlogged scratch tables
+      if (m[1]) continue; // temporary tables are not exposed by the API
       const key = tableKey(m[2] ?? '');
       const t = tables.get(key);
       if (t) t.loc ??= loc();
-      else tables.set(key, { rls: false, loc: loc() });
+      else tables.set(key, newTable(false, loc()));
       continue;
     }
 
@@ -300,7 +330,7 @@ function replay(
         t.rls = enabled;
         if (!enabled) t.loc = loc();
       } else {
-        tables.set(key, { rls: enabled, loc: enabled ? null : loc() });
+        tables.set(key, newTable(enabled, enabled ? null : loc()));
       }
       continue;
     }
@@ -339,13 +369,38 @@ function replay(
       continue;
     }
 
-    if ((m = RE_REVOKE.exec(s))) {
-      const grantees = (m[2] ?? '').toLowerCase();
-      if (!/\b(anon|public)\b/.test(grantees)) continue;
-      const target = m[1] ?? '';
-      const schema = new RegExp(String.raw`^all\s+tables\s+in\s+schema\s+(${ID})$`, 'i').exec(target.trim());
-      if (schema) protectedSchemas.add(normalizeIdent(schema[1] ?? ''));
-      else for (const key of splitQNames(target)) protectedTables.add(key);
+    if ((m = RE_GRANT_OR_REVOKE.exec(s))) {
+      if (/^revoke\s+grant\s+option\s+for\b/i.test(s)) continue; // privileges stay
+      const revoke = m[1]?.toLowerCase() === 'revoke';
+      const privText = (m[2] ?? '').toLowerCase();
+      const privileges = /\ball\b/.test(privText)
+        ? [...TABLE_PRIVILEGES]
+        : TABLE_PRIVILEGES.filter((p) => new RegExp(String.raw`\b${p}\b`).test(privText));
+      const named = (m[4] ?? '')
+        .split(',')
+        .map((r) => normalizeIdent(r.trim().split(/\s+/)[0] ?? ''));
+      // Granting to PUBLIC reopens access for everyone; revoking from PUBLIC
+      // does not touch the privileges Supabase grants to anon / authenticated.
+      const roles = API_ROLES.filter((r) => named.includes(r) || (!revoke && named.includes('public')));
+      if (privileges.length === 0 || roles.length === 0) continue;
+
+      const target = (m[3] ?? '').trim();
+      const schema = new RegExp(String.raw`^all\s+tables\s+in\s+schema\s+(${ID})$`, 'i').exec(target);
+      const keys = schema
+        ? [...tables.keys()].filter((k) => k.startsWith(`${normalizeIdent(schema[1] ?? '')}.`))
+        : splitQNames(target);
+      for (const key of keys) {
+        let t = tables.get(key);
+        if (!t) tables.set(key, (t = newTable(false, null)));
+        for (const role of roles) {
+          let set = t.revoked.get(role);
+          if (!set) t.revoked.set(role, (set = new Set()));
+          for (const p of privileges) {
+            if (revoke) set.add(p);
+            else set.delete(p);
+          }
+        }
+      }
     }
   }
 }

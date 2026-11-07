@@ -96,6 +96,49 @@ describe('supabase-rls false positives', () => {
   });
 });
 
+describe('supabase-rls detection is not bypassed', () => {
+  const noRls = async (sql: string) =>
+    (await findingsFor({ 'supabase/migrations/1.sql': sql }))
+      .filter((f) => f.messageId === 'supabase.noRls')
+      .map((f) => f.params.table);
+
+  it('reports unlogged tables (they are exposed like any other)', async () => {
+    expect(await noRls('create unlogged table public.events (id int);')).toEqual(['events']);
+  });
+
+  it('needs every privilege revoked from both anon and authenticated', async () => {
+    const sql = [
+      'create table public.e (id int);',
+      'revoke all on all tables in schema public from anon, authenticated;',
+      'grant all on public.e to public;',
+      'create table public.a (id int);',
+      'revoke all on public.a from anon;',
+      'create table public.b (id int);',
+      'revoke all on public.b from public;',
+      'create table public.c (id int);',
+      'revoke select on public.c from anon, authenticated;',
+      'create table public.d (id int);',
+      'revoke all on table public.d from anon, authenticated;',
+      'grant select on public.d to authenticated;',
+      'create table public.f (id int);',
+      'revoke grant option for all on public.f from anon, authenticated;',
+    ].join('\n');
+    expect((await noRls(sql)).sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+  });
+
+  it('closes a table when the schema-wide revoke covers it', async () => {
+    const sql = 'create table public.a (id int);\nrevoke all on all tables in schema public from anon, authenticated;';
+    expect(await noRls(sql)).toEqual([]);
+  });
+
+  it('is not blinded by E-strings, $ in identifiers or unterminated quotes', async () => {
+    expect(await noRls("insert into t values (E'it\\'s; create table public.x (id int);');")).toEqual([]);
+    expect(await noRls('select a$b$ from t;\ncreate table public.y (id int);')).toEqual(['y']);
+    expect(await noRls("select 'oops;\ncreate table public.z (id int);")).toEqual(['z']);
+    expect(await noRls('select $$ never closed;\ncreate table public.w (id int);')).toEqual(['w']);
+  });
+});
+
 describe('splitSql', () => {
   it('keeps offsets and splits on top-level semicolons only', () => {
     const src = 'create policy "a;b" on t using (true);\n-- x;\nselect 1';
