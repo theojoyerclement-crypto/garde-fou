@@ -1,7 +1,7 @@
 {
   "name": "gardefou",
-  "version": "0.1.0",
-  "description": "Garde-Fou : audit de sécurité local pour les projets générés par IA (secrets, .env, variables exposées). Local security audit for AI-generated projects.",
+  "version": "0.2.0",
+  "description": "Garde-Fou : audit de sécurité local pour les projets générés par IA (secrets, .env, Supabase RLS, Firebase, routes API, dépendances). Local security audit for AI-generated projects.",
   "type": "module",
   "bin": {
     "gardefou": "dist/cli.js",
@@ -31,6 +31,8 @@
     "ai",
     "vibe-coding",
     "supabase",
+    "firebase",
+    "osv",
     "nextjs",
     "vite"
   ],
