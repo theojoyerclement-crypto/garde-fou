@@ -12,6 +12,53 @@ async function findingsFor(files: Record<string, string>) {
   return (await audit(root)).findings.filter((f) => f.ruleId === 'firebase-rules');
 }
 
+describe('official example (firebase/friendlyeats-web, nextjs-end)', () => {
+  it('stays silent on per-collection public reads with multi-line write conditions and a service-level function', async () => {
+    const rules = [
+      "rules_version = '2';",
+      'service cloud.firestore {',
+      '  function unchanged(key) {',
+      '    return (key in resource.data)',
+      '      && (key in request.resource.data)',
+      '      && (resource.data[key] == request.resource.data[key]);',
+      '  }',
+      '  match /databases/{database}/documents {',
+      '    match /restaurants/{restaurantId} {',
+      '      allow read;',
+      '      allow create: if request.auth != null;',
+      '      allow update: if request.auth != null',
+      '                    && unchanged("name");',
+      '        match /ratings/{ratingId} {',
+      '          allow read;',
+      '          allow create: if request.auth != null;',
+      '          allow update: if request.auth != null',
+      '                        && request.resource.data.userId == request.auth.uid;',
+      '      }',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    expect(await findingsFor({ 'firestore.rules': rules })).toEqual([]);
+  });
+
+  it('reports its Storage rules: every file readable by anyone', async () => {
+    const rules = [
+      "rules_version = '2';",
+      '// allow write: if firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;',
+      'service firebase.storage {',
+      '  match /b/{bucket}/o {',
+      '    match /{allPaths=**} {',
+      '      allow read;',
+      '      allow write: if request.auth.uid != null;',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const got = (await findingsFor({ 'storage.rules': rules })).map((f) => `${f.severity} ${f.messageId} ${f.params.path}`);
+    expect(got).toEqual(['high firebase.openRead /{allPaths=**}']);
+  });
+});
+
 describe('fixtures/firebase', () => {
   it('reports open writes, global reads and test-mode rules', async () => {
     const result = await audit(copyNamedFixture('firebase'));
