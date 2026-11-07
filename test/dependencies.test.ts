@@ -24,6 +24,9 @@ const FAKE_DB: Record<string, { id: string; severity: OsvVuln['severity']; fixed
   deepmerge: [{ id: 'GHSA-gcqx-w48m-w2h4', severity: 'low', fixed: '4.3.2' }],
   nanoid: [{ id: 'GHSA-mwcw-c2x4-8c55', severity: 'medium', fixed: '3.3.8' }],
   picomatch: [{ id: 'GHSA-fake-picomatch', severity: 'medium', fixed: '2.3.2' }],
+  // Native addon case (fixtures/dependencies-native), seen on a real project using sqlite3.
+  tar: [{ id: 'GHSA-23hp-3jrh-7fpw', severity: 'critical', fixed: '7.5.21' }],
+  '@tootallnate/once': [{ id: 'GHSA-vpq2-c234-7xj6', severity: 'low', fixed: '2.0.1' }],
 };
 
 function fakeOsv(log: OsvPackage[][] = []): OsvClient {
@@ -251,6 +254,44 @@ describe('fixtures/dependencies-devtool (jest in dependencies by mistake)', () =
       'devTool:jest:jest',
       'devTool:minimatch:jest',
     ]);
+  });
+});
+
+describe('fixtures/dependencies-native (sqlite3 native build)', () => {
+  it('skips what only the native build uses (sqlite3 > tar, node-gyp), keeps runtime packages', async () => {
+    const result = await audit(copyNamedFixture('dependencies-native'), { osv: fakeOsv() });
+    expect(result.findings.map((f) => `${f.severity}:${f.params.pkg}:${f.params.via}`)).toEqual([
+      'medium:minimatch:static-server',
+    ]);
+    expect(result.ignoredDeps.map((d) => `${d.reason}:${d.name}:${d.via.join('+')}:${d.vulns.join('+')}`)).toEqual([
+      'build:@tootallnate/once:node-gyp:GHSA-vpq2-c234-7xj6',
+      'build:http-proxy-agent:node-gyp:',
+      'build:node-gyp:node-gyp:',
+      'build:tar:node-gyp+sqlite3 > tar:GHSA-23hp-3jrh-7fpw',
+    ]);
+    expect(renderReport(result, { lang: 'fr', color: false, verbose: true })).toContain(
+      'tar@6.2.1 via node-gyp, sqlite3 > tar ⚠ GHSA-23hp-3jrh-7fpw',
+    );
+  });
+
+  it('only drops the sqlite3 > tar edge: tar used by another runtime package is reported', () => {
+    const v3 = JSON.stringify({
+      packages: {
+        '': { dependencies: { sqlite3: '5', 'archive-kit': '1' } },
+        'node_modules/sqlite3': { version: '5.1.7', dependencies: { tar: '6' } },
+        'node_modules/archive-kit': { version: '1.0.0', dependencies: { tar: '6' } },
+        'node_modules/tar': { version: '6.2.1' },
+      },
+    });
+    const a = analyzePackageLock(v3);
+    expect(a?.packages.find((p) => p.name === 'tar')).toEqual({
+      name: 'tar',
+      version: '6.2.1',
+      direct: false,
+      via: ['archive-kit'],
+      devTools: [],
+    });
+    expect(a?.skipped).toEqual([]);
   });
 });
 

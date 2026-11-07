@@ -9,8 +9,10 @@ afterAll(cleanupTempDirs);
 /** Same advisories as the vulnerable fixture: the clean app's versions are past every fix. */
 const fakeOsv: OsvClient = {
   async query(pkgs) {
-    // zod (under expo > @expo/cli) and minimatch (under jest, dev) are vulnerable but never shipped.
+    // zod (under expo > @expo/cli), minimatch (under jest, dev) and tar (sqlite3 / node-gyp build only)
+    // are vulnerable but never shipped.
     const db: Record<string, string> = {
+      tar: '7.5.21',
       lodash: '4.17.21',
       minimist: '1.2.6',
       ms: '2.0.0',

@@ -76,6 +76,7 @@ fixtures/api-auth/         routes Next.js / Express / Edge Functions sans auth
 fixtures/dependencies/     package-lock.json avec versions vulnérables
 fixtures/dependencies-expo/    chaîne de build Expo, jest en dev, dépendances indirectes (via, majeure)
 fixtures/dependencies-devtool/ jest rangé dans dependencies
+fixtures/dependencies-native/  addon natif (sqlite3 > tar, node-gyp) : build seulement
 fixtures/clean-app/        sosie sécurisé de chaque cas : 0 problème attendu
 test/                      tests vitest
 ```
@@ -111,7 +112,8 @@ Code de sortie : 1 s'il y a au moins un problème critique ou élevé, 2 si le d
   (inconnue ⇒ moyen), version corrigée. Ignorés : dev, liens, workspaces, versions non semver.
   Lockfile v2/v3 : arbre reconstruit depuis les `dependencies` de package.json. Ignorés aussi :
   paquets atteints seulement via la chaîne de build (`BUILD_TOOLCHAIN` : `@expo/cli`, `@expo/config`,
-  `metro`…). Dépendance indirecte : `via` = dépendance directe parente (à mettre à jour), `major` =
+  `metro`, `node-gyp`, `prebuild-install`…) ou par un lien de build seul (`BUILD_ONLY_EDGES`, ex.
+  `sqlite3 > tar`, vérifié dans les sources du paquet). Dépendance indirecte : `via` = dépendance directe parente (à mettre à jour), `major` =
   correctif en version majeure (jamais d'overrides conseillé). Outil de dev (`DEV_TOOLS` : jest,
   eslint…) dans `dependencies` : un seul problème faible `deps.devToolInProd` par outil, pas un par faille.
   Rien n'est ignoré en silence : chaque paquet écarté va dans `ctx.ignoredDeps` (raison build / dev /

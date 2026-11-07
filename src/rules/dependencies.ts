@@ -57,7 +57,19 @@ export const BUILD_TOOLCHAIN = new Set([
   '@react-native/community-cli-plugin',
   '@react-native/metro-config',
   'metro',
+  // Native addon builds: run by `npm install` scripts, never loaded by the app.
+  'node-gyp',
+  'prebuild-install',
 ]);
+
+/**
+ * Dependencies a runtime package only uses in its install / build scripts.
+ * parent → children; the edge is not followed (the child is labelled build).
+ * Each entry is checked against the package's sources:
+ * - sqlite3 requires tar only in deps/extract.js, run by binding.gyp to unpack
+ *   its own bundled SQLite archive during the native build.
+ */
+export const BUILD_ONLY_EDGES: ReadonlyMap<string, ReadonlySet<string>> = new Map([['sqlite3', new Set(['tar'])]]);
 
 /** Test runners, linters and formatters: their place is devDependencies. */
 const DEV_TOOLS = new Set([
@@ -235,7 +247,8 @@ export function analyzePackageLock(text: string): LockAnalysis | null {
       .map((n) => resolve(key, n))
       .filter((k): k is string => k !== undefined);
 
-  const toolchainKeys = new Set<string>();
+  /** Where the runtime walk stopped: lock key → build tool label (e.g. "node-gyp", "sqlite3 > tar"). */
+  const toolchainKeys = new Map<string, string>();
   /** Every lock key reachable from `start`; with `stopAtToolchain`, without entering the build toolchain. */
   const reach = (start: string, stopAtToolchain = true): Set<string> => {
     const seen = new Set<string>();
@@ -243,13 +256,21 @@ export function analyzePackageLock(text: string): LockAnalysis | null {
     while (stack.length > 0) {
       const key = stack.pop() as string;
       if (seen.has(key)) continue;
-      if (stopAtToolchain && BUILD_TOOLCHAIN.has(nameOfKey(key))) {
-        toolchainKeys.add(key);
+      const name = nameOfKey(key);
+      if (stopAtToolchain && BUILD_TOOLCHAIN.has(name)) {
+        toolchainKeys.set(key, name);
         continue;
       }
       seen.add(key);
       const e = entry(key);
-      if (e) stack.push(...childrenOf(key, e));
+      if (!e) continue;
+      const buildOnly = stopAtToolchain ? BUILD_ONLY_EDGES.get(name) : undefined;
+      for (const child of childrenOf(key, e)) {
+        const childName = nameOfKey(child);
+        if (buildOnly?.has(childName)) {
+          if (!toolchainKeys.has(child)) toolchainKeys.set(child, `${name} > ${childName}`);
+        } else stack.push(child);
+      }
     }
     return seen;
   };
@@ -282,7 +303,7 @@ export function analyzePackageLock(text: string): LockAnalysis | null {
     }
   };
   const buildVia = new Map<string, Set<string>>();
-  for (const key of toolchainKeys) addAll(buildVia, reach(key, false), nameOfKey(key));
+  for (const [key, label] of toolchainKeys) addAll(buildVia, reach(key, false), label);
   const devVia = new Map<string, Set<string>>();
   for (const name of names(root.devDependencies)) {
     const start = resolve('', name);

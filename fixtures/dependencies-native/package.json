@@ -1,0 +1,10 @@
+{
+  "name": "deps-native",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Native addon (sqlite3): tar and node-gyp only run during npm install, never in the app; static-server uses minimatch at runtime. Used to test Garde-Fou.",
+  "dependencies": {
+    "db-shim": "1.0.0",
+    "static-server": "1.0.0"
+  }
+}
