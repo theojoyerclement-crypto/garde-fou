@@ -27,9 +27,17 @@ règles Firebase ouvertes, routes API sans auth, dépendances vulnérables.
    faux positifs (placeholders, clés de test, valeurs publiques par design).
 3. **Règles déterministes.** Regex strictes par fournisseur + validation (entropie de
    Shannon ≥ `MIN_ENTROPY`, filtre de placeholders, décodage JWT). Même entrée ⇒ même sortie.
-4. **Pas d'IA.** Aucun LLM. Tout tourne en local, **sauf** la règle `dependencies` qui
-   interroge OSV.dev (`src/osv.ts`, seul accès réseau ; noms + versions des paquets uniquement),
-   désactivable avec `--offline`. Les tests n'accèdent jamais au réseau (client OSV factice).
+4. **Pas d'IA dans la détection.** Les règles sont 100 % locales et déterministes. Accès
+   réseau possibles : la règle `dependencies` (OSV.dev, noms + versions des paquets) et l'option
+   `--ai` (explications seulement, jamais de détection, jamais de changement de gravité ou de
+   score). `--offline` coupe les deux (Ollama reste permis sur une adresse locale).
+   Tout ce qui part vers une IA passe par `redactSecrets()` (`src/ai/redact.ts`) puis
+   `isRedacted()` ; ne jamais contourner. La sortie de l'IA est non fiable : `cleanAiText()`
+   puis échappement. Les tests n'accèdent jamais au réseau (clients OSV et IA factices).
+8. **HTML** : tout texte inséré dans `src/html.ts` passe par `escapeHtml()`. Pas de ressource
+   externe, pas de style/script inline autre que `STYLE` et `SCRIPT` (hachés dans la CSP),
+   pas d'attribut `on*` ni `style`. Le lien « faux positif » ne contient que des champs sûrs
+   (`ISSUE_SAFE_PARAMS`), jamais de chemin, de valeur masquée ni de code.
 5. **1 fichier par règle dans `src/rules/`**, enregistré dans `src/rules/index.ts`.
    Les détecteurs partagés vivent dans `src/patterns.ts`.
 6. **Ne jamais afficher un secret en entier** : toujours `maskSecret()`.
@@ -41,7 +49,7 @@ règles Firebase ouvertes, routes API sans auth, dépendances vulnérables.
 
 ```
 src/
-  cli.ts          point d'entrée commander (--lang, --json, --no-history, --offline, --no-color)
+  cli.ts          point d'entrée commander (--lang, --json, --html, --ai, --no-history, --offline, --no-color)
   audit.ts        runAudit(dir) (async) : scanner + git + règles → findings triés + score + notes
   scanner.ts      parcours des fichiers ; respecte les .gitignore (du dossier racine git
                   jusqu'au dossier scanné) ; ignore toujours node_modules/, .git/, fixtures/ ;
@@ -51,6 +59,9 @@ src/
   patterns.ts     détecteurs de secrets, entropie, masquage, helpers .env
   osv.ts          client OSV.dev (querybatch + détails), sévérité, version corrigée, semver
   report.ts       tri par gravité, score /100, nettoyage des params, rendu terminal
+  html.ts         rapport HTML autonome (échappement, CSP par hash, lien faux positif)
+  ai/             redact.ts (masquage avant envoi), providers.ts (Claude SDK, OpenAI, Ollama),
+                  explain.ts (extraits, appels, repli silencieux)
   rules/          secrets.ts, env.ts, supabase-rls.ts, firebase-rules.ts, api-auth.ts,
                   dependencies.ts, index.ts
   i18n/           fr.ts, en.ts, types.ts, index.ts (détection de la langue)

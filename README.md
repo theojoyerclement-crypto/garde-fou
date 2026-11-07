@@ -31,9 +31,34 @@ qui coûtent le plus cher :
 Chaque problème est expliqué simplement, avec le correctif à appliquer et un **prompt prêt à
 coller** dans Lovable, Cursor ou Claude Code pour le corriger. Le projet reçoit un **score sur 100**.
 
-Principes : **zéro faux positif en priorité**, règles déterministes, aucune IA. Le seul accès
-réseau est la vérification des dépendances sur OSV.dev : seuls les noms et versions des paquets
-du `package-lock.json` sont envoyés, jamais votre code. `--offline` la désactive.
+Principes : **zéro faux positif en priorité**, règles déterministes : la détection n'utilise
+jamais d'IA. Par défaut, le seul accès réseau est la vérification des dépendances sur OSV.dev :
+seuls les noms et versions des paquets du `package-lock.json` sont envoyés, jamais votre code.
+`--offline` coupe tout accès réseau.
+
+### Rapport HTML (`--html`)
+
+`npx gardefou --html` écrit `garde-fou-report.html` (ou le fichier indiqué) : une page autonome,
+sans ressource externe, lisible sur mobile, avec le score, les problèmes triés par gravité, un
+bouton « Copier » pour chaque prompt et un lien « Signaler un faux positif » qui ouvre une issue
+GitHub pré-remplie **sans secret, chemin ni code**. Le rapport contient les clés masquées
+(`sk-proj-1f…DGqC`) : ne le commitez pas.
+
+### Explications IA (`--ai`, optionnel)
+
+```bash
+ANTHROPIC_API_KEY=… npx gardefou --ai          # Claude (ou OpenAI si seule OPENAI_API_KEY existe)
+npx gardefou --ai openai                         # OPENAI_API_KEY
+npx gardefou --ai ollama                         # modèle local (OLLAMA_HOST, défaut 127.0.0.1:11434)
+GARDEFOU_AI_MODEL=… npx gardefou --ai claude     # autre modèle (défaut : claude-opus-5-5 / gpt-4o-mini / llama3.2)
+```
+
+L'IA **n'ajoute ni ne retire aucun problème** et ne change ni la gravité ni le score : elle
+explique les 10 problèmes les plus graves et adapte le correctif à votre code. Elle ne reçoit que
+de courts extraits (±6 lignes) **après masquage des secrets** (clés, JWT, clés privées, mots de
+passe dans les URL, valeurs des `.env`…) ; une requête qui contiendrait encore un secret
+reconnaissable n'est pas envoyée. Sans clé, hors ligne ou en cas d'erreur, le rapport est
+identique, avec une simple mention. Les réponses de l'IA sont à vérifier.
 
 ### Options
 
@@ -43,7 +68,9 @@ npx gardefou mon-projet      # audite un autre dossier
 npx gardefou --lang en       # messages en anglais (fr / en, détecté automatiquement sinon)
 npx gardefou --json          # sortie JSON (CI), avec textes et prompts localisés
 npx gardefou --no-history    # ne pas lire l'historique git
-npx gardefou --offline       # aucun accès réseau (dépendances non vérifiées)
+npx gardefou --offline       # aucun accès réseau (ni OSV ni IA distante)
+npx gardefou --html          # rapport HTML autonome (garde-fou-report.html)
+npx gardefou --ai            # explications IA (Claude, OpenAI ou Ollama), optionnel
 ```
 
 Code de sortie `1` s'il y a au moins un problème critique ou élevé : idéal en CI.
@@ -59,11 +86,21 @@ Row Level Security and `using (true)` policies, Firebase rules open to everyone,
 checking the caller, and production dependencies with known vulnerabilities (OSV).
 
 Every finding comes with a plain-language explanation, a fix, a **ready-to-paste prompt** for
-your AI coding tool, and a score out of 100. The only network access is the OSV dependency
-check (package names and versions only); `--offline` turns it off.
+your AI coding tool, and a score out of 100. Detection never uses AI. By default the only network
+access is the OSV dependency check (package names and versions only); `--offline` turns off all
+network access.
+
+- `--html [file]`: standalone HTML report (no external resource, mobile friendly) with copy
+  buttons and a "report a false positive" link that opens a pre-filled GitHub issue with no
+  secret, path or code. It contains masked keys: do not commit it.
+- `--ai [claude|openai|ollama]`: optional AI explanations of the 10 most severe findings, with a
+  fix adapted to your code. Keys from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, `OLLAMA_HOST` for a
+  local model, `GARDEFOU_AI_MODEL` to change the model. Only short excerpts are sent, **after
+  secrets are masked**. The AI never adds or removes findings; without a key or on error the
+  report is unchanged.
 
 ```bash
-npx gardefou [dir] [--lang fr|en] [--json] [--no-history] [--offline] [--no-color]
+npx gardefou [dir] [--lang fr|en] [--json] [--html [file]] [--ai [provider]] [--no-history] [--offline] [--no-color]
 ```
 
 Exit code `1` when at least one critical or high issue is found.
