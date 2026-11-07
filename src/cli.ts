@@ -21,6 +21,7 @@ interface CliOptions {
   color: boolean;
   ai?: string | boolean;
   html?: string | boolean;
+  verbose?: boolean;
 }
 
 const program = new Command();
@@ -45,6 +46,7 @@ program
     'aucun accès réseau : ni OSV ni IA distante / no network: no OSV check, no remote AI',
   )
   .option('--no-color', 'désactiver les couleurs / disable colors')
+  .option('--verbose', 'lister les dépendances ignorées / list ignored dependencies')
   .action(async (dir: string, opts: CliOptions) => {
     const lang: Lang = opts.lang && isLang(opts.lang) ? opts.lang : detectLang();
     const m = messages(lang);
@@ -69,7 +71,9 @@ program
         const findings = result.findings.map((f) => ({ ...f, ...localizeFinding(f, lang) }));
         process.stdout.write(`${JSON.stringify({ ...result, lang, findings }, null, 2)}\n`);
       } else {
-        process.stdout.write(`${renderReport(result, { lang, color: opts.color && pc.isColorSupported })}\n`);
+        process.stdout.write(
+          `${renderReport(result, { lang, color: opts.color && pc.isColorSupported, verbose: opts.verbose ?? false })}\n`,
+        );
       }
 
       const blocking = result.findings.some((f) => f.severity === 'critical' || f.severity === 'high');

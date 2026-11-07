@@ -9,7 +9,15 @@ import type { AuditResult } from './audit';
 import { redactSecrets } from './ai/redact';
 import { messages, type Lang } from './i18n';
 import { basenameOf, isEnvFile } from './patterns';
-import { cleanParam, countBySeverity, localizeFinding, locationOf, promptParam } from './report';
+import {
+  cleanParam,
+  countBySeverity,
+  ignoredGroups,
+  ignoredSummary,
+  localizeFinding,
+  locationOf,
+  promptParam,
+} from './report';
 import { SEVERITY_ORDER, type Finding, type Severity } from './types';
 import { ISSUES_NEW_URL, VERSION } from './version';
 
@@ -180,6 +188,8 @@ export function renderHtml(result: AuditResult, opts: HtmlOptions): string {
       ? m.ui.gitHistoryScanned
       : m.ui.gitHistorySkipped;
   const notes = [m.ui.filesScanned(result.filesScanned), gitState, ...result.notes.map((n) => m.ui.notes[n])];
+  // The detail is in the page (collapsed section below): no --verbose hint.
+  const ignored = ignoredSummary(result, opts.lang, true);
 
   const out: string[] = [];
   out.push(
@@ -209,6 +219,7 @@ export function renderHtml(result: AuditResult, opts: HtmlOptions): string {
     ),
     '</ul></div>',
     `<p class="notes">${e(notes.join(' · '))}</p>`,
+    ...(ignored ? [`<p class="notes">${e(ignored)}</p>`] : []),
     '</section>',
     '</header>',
     '<main>',
@@ -261,6 +272,18 @@ export function renderHtml(result: AuditResult, opts: HtmlOptions): string {
         '</article>',
       );
     }
+  }
+
+  const groups = ignoredGroups(result, opts.lang);
+  if (groups.length > 0) {
+    out.push('<details class="ignored">', `<summary>${e(m.ui.ignored.title)}</summary>`);
+    for (const g of groups) {
+      out.push(
+        `<p class="label">${e(g.label)} (${g.lines.length})</p>`,
+        `<ul class="locs">${g.lines.map((l) => `<li>${e(l.text)}</li>`).join('')}</ul>`,
+      );
+    }
+    out.push('</details>');
   }
 
   out.push(

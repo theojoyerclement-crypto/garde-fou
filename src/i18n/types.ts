@@ -1,4 +1,4 @@
-import type { MessageId, NoteId, Severity } from '../types';
+import type { IgnoredReason, MessageId, NoteId, Severity } from '../types';
 
 type P = Record<string, string>;
 
@@ -39,6 +39,14 @@ export interface Messages {
     aiInvalid: (choice: string) => string;
     htmlWritten: (file: string) => string;
     htmlError: (file: string) => string;
+    ignored: {
+      /** One line for the header. `vulnerable` is null when OSV was not queried. */
+      summary: (counts: Record<IgnoredReason, number>, vulnerable: number | null, verbose: boolean) => string;
+      /** Title of the --verbose / HTML detail. */
+      title: string;
+      reasons: Record<IgnoredReason, string>;
+      via: (list: string) => string;
+    };
   };
   html: {
     pageTitle: (target: string) => string;

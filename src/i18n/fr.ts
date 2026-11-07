@@ -261,6 +261,29 @@ export const fr: Messages = {
     aiInvalid: (c) => `Fournisseur IA inconnu : ${c} (choix : claude, openai, ollama)`,
     htmlWritten: (f) => `Rapport HTML écrit : ${f}`,
     htmlError: (f) => `Impossible d'écrire le rapport HTML : ${f}`,
+    ignored: {
+      summary: (c, vulnerable, verbose) => {
+        const s = (n: number) => (n > 1 ? 's' : '');
+        const parts = [
+          c.build ? `${c.build} dépendance${s(c.build)} de build ignorée${s(c.build)}` : '',
+          c.dev ? `${c.dev} dépendance${s(c.dev)} de dev ignorée${s(c.dev)}` : '',
+          c.devTool ? `${c.devTool} installée${s(c.devTool)} par un outil de dev rangé en production` : '',
+          c.unused ? `${c.unused} installée${s(c.unused)} par rien de déclaré` : '',
+          c.unverifiable ? `${c.unverifiable} non vérifiable${s(c.unverifiable)} (git, fichier)` : '',
+        ].filter(Boolean);
+        const vulns = vulnerable === null ? '' : vulnerable === 0 ? ', aucune avec faille connue' : `, dont ${vulnerable} avec faille${s(vulnerable)} connue${s(vulnerable)}`;
+        return `${parts.join(', ')}${vulns}${verbose ? '' : ' (détail : --verbose)'}`;
+      },
+      title: 'Dépendances ignorées (hors score)',
+      reasons: {
+        build: 'Outils de build : tournent sur votre machine, jamais dans l’appli',
+        dev: 'Dépendances de dev (devDependencies) : jamais en production',
+        devTool: 'Installées par un outil de dev rangé dans "dependencies" (voir le problème signalé)',
+        unused: 'Dans le lockfile, mais installées par rien de déclaré dans package.json',
+        unverifiable: 'Version non vérifiable sur OSV (git, fichier, archive)',
+      },
+      via: (list) => `via ${list}`,
+    },
   },
   html: {
     pageTitle: (t) => `Garde-Fou — rapport de ${t}`,

@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { compareSemver, createOsvClient, toVuln, type FetchLike } from '../src/osv';
-import { localizeFinding } from '../src/report';
+import { renderHtml } from '../src/html';
+import { localizeFinding, renderReport } from '../src/report';
 import { analyzePackageLock, parsePackageLock } from '../src/rules/dependencies';
 import type { OsvClient, OsvPackage, OsvVuln } from '../src/types';
 import { audit, cleanupTempDirs, copyNamedFixture, makeTempDir, writeFiles } from './helpers';
@@ -47,6 +48,8 @@ describe('fixtures/dependencies', () => {
       'lodash@4.17.20',
       'minimist@1.2.5',
       'mkdirp-legacy@1.0.0',
+      // dev dependency: checked only to list its advisories among the ignored ones, never a finding.
+      'semver@5.7.1',
     ]);
     expect(result.findings.map((f) => ({ severity: f.severity, line: f.line, ...f.params }))).toEqual([
       {
@@ -103,16 +106,9 @@ describe('fixtures/dependencies', () => {
 
 describe('fixtures/dependencies-expo (build toolchain, dev tools, indirect dependencies)', () => {
   it('skips what only the build toolchain or devDependencies install, names the parent of indirect ones', async () => {
-    const queried: OsvPackage[][] = [];
-    const result = await audit(copyNamedFixture('dependencies-expo'), { osv: fakeOsv(queried) });
+    const result = await audit(copyNamedFixture('dependencies-expo'), { osv: fakeOsv() });
     // zod 3.25.76, glob, minimatch (expo > @expo/cli, @expo/config) and deepmerge (@expo/config) never run
-    // in the app; jest's glob / minimatch are dev. None of them is even sent to OSV.
-    expect(queried.flat().map((p) => `${p.name}@${p.version}`)).toEqual([
-      'expo@58.0.0',
-      'form-kit@1.0.0',
-      'nanoid@3.3.6',
-      'zod@3.22.0',
-    ]);
+    // in the app; jest's glob / minimatch are dev: no finding, but listed as ignored with their advisories.
     expect(result.findings.map((f) => ({ severity: f.severity, ...f.params }))).toEqual([
       {
         severity: 'high',
@@ -139,6 +135,68 @@ describe('fixtures/dependencies-expo (build toolchain, dev tools, indirect depen
         major: '',
       },
     ]);
+  });
+
+  it('lists every ignored dependency with its reason, what installs it and its advisories', async () => {
+    const queried: OsvPackage[][] = [];
+    const result = await audit(copyNamedFixture('dependencies-expo'), { osv: fakeOsv(queried) });
+    const file = 'package-lock.json';
+    expect(result.ignoredDeps).toEqual([
+      { file, name: '@expo/cli', version: '58.0.0', reason: 'build', via: ['@expo/cli'], vulns: [] },
+      { file, name: '@expo/config', version: '58.0.0', reason: 'build', via: ['@expo/config'], vulns: [] },
+      { file, name: 'deepmerge', version: '4.3.1', reason: 'build', via: ['@expo/config'], vulns: ['GHSA-gcqx-w48m-w2h4'] },
+      { file, name: 'glob', version: '13.0.6', reason: 'build', via: ['@expo/cli', '@expo/config'], vulns: ['GHSA-3g3m-2fjr-6pw4'] },
+      { file, name: 'jest', version: '30.5.2', reason: 'dev', via: ['jest'], vulns: [] },
+      { file, name: 'minimatch', version: '10.2.6', reason: 'build', via: ['@expo/cli', '@expo/config'], vulns: ['GHSA-g3hv-75wg-m249'] },
+      { file, name: 'zod', version: '3.25.76', reason: 'build', via: ['@expo/cli'], vulns: ['GHSA-mrhx-c7xc-m3w5'] },
+    ]);
+    // Ignored packages are checked on OSV too (names and versions only), to show their advisories.
+    expect(queried.flat().map((p) => `${p.name}@${p.version}`).sort()).toEqual([
+      '@expo/cli@58.0.0',
+      '@expo/config@58.0.0',
+      'deepmerge@4.3.1',
+      'expo@58.0.0',
+      'form-kit@1.0.0',
+      'glob@13.0.6',
+      'jest@30.5.2',
+      'minimatch@10.2.6',
+      'nanoid@3.3.6',
+      'zod@3.22.0',
+      'zod@3.25.76',
+    ]);
+  });
+
+  it.each(['fr', 'en'] as const)('%s: one summary line, the full list with --verbose', async (lang) => {
+    const result = await audit(copyNamedFixture('dependencies-expo'), { osv: fakeOsv() });
+    const short = renderReport(result, { lang, color: false });
+    expect(short).toContain(
+      lang === 'fr'
+        ? '6 dépendances de build ignorées, 1 dépendance de dev ignorée, dont 4 avec failles connues (détail : --verbose)'
+        : '6 build dependencies ignored, 1 dev dependency ignored, 4 with known vulnerabilities (details: --verbose)',
+    );
+    expect(short).not.toContain('zod@3.25.76');
+    const long = renderReport(result, { lang, color: false, verbose: true });
+    expect(long).not.toContain('--verbose');
+    expect(long).toContain(lang === 'fr' ? 'Dépendances ignorées (hors score)' : 'Ignored dependencies (not scored)');
+    expect(long).toContain('zod@3.25.76 via @expo/cli ⚠ GHSA-mrhx-c7xc-m3w5');
+    expect(long).toContain('jest@30.5.2');
+    // Packages with advisories come first in their group.
+    expect(long.indexOf('deepmerge@4.3.1')).toBeLessThan(long.indexOf('@expo/cli@58.0.0'));
+  });
+
+  it('still counts ignored dependencies with --offline, without claiming anything about advisories', async () => {
+    const result = await audit(copyNamedFixture('dependencies-expo'), { offline: true });
+    expect(result.ignoredDeps.every((d) => d.vulns.length === 0)).toBe(true);
+    const text = renderReport(result, { lang: 'fr', color: false });
+    expect(text).toContain('6 dépendances de build ignorées, 1 dépendance de dev ignorée (détail : --verbose)');
+  });
+
+  it('shows the summary and a collapsed, escaped list in the HTML report', async () => {
+    const result = await audit(copyNamedFixture('dependencies-expo'), { osv: fakeOsv() });
+    const html = renderHtml(result, { lang: 'en', date: new Date('2026-11-07T12:00:00Z') });
+    expect(html).toContain('6 build dependencies ignored, 1 dev dependency ignored, 4 with known vulnerabilities</p>');
+    expect(html).toContain('<details class="ignored">\n<summary>Ignored dependencies (not scored)</summary>');
+    expect(html).toContain('<li>zod@3.25.76 via @expo/cli ⚠ GHSA-mrhx-c7xc-m3w5</li>');
   });
 
   it.each(['fr', 'en'] as const)('%s: an indirect fix targets the parent; a major jump forbids overrides', async (lang) => {
@@ -187,6 +245,12 @@ describe('fixtures/dependencies-devtool (jest in dependencies by mistake)', () =
     const clean: OsvClient = { query: async (pkgs) => pkgs.map(() => []) };
     const result = await audit(copyNamedFixture('dependencies-devtool'), { osv: clean });
     expect(result.findings).toEqual([]);
+    // Still visible: what only jest installs.
+    expect(result.ignoredDeps.map((d) => `${d.reason}:${d.name}:${d.via.join('+')}`)).toEqual([
+      'devTool:glob:jest',
+      'devTool:jest:jest',
+      'devTool:minimatch:jest',
+    ]);
   });
 });
 
@@ -202,13 +266,37 @@ describe('analyzePackageLock', () => {
         'node_modules/orphan': { version: '3.0.0' },
       },
     });
-    expect(analyzePackageLock(v3)).toEqual([
-      { name: 'a', version: '1.0.0', direct: false, via: ['app'], devTools: [] },
-      { name: 'p', version: '2.0.0', direct: false, via: ['app'], devTools: [] },
-    ]);
-    const v1 = JSON.stringify({ lockfileVersion: 1, dependencies: { a: { version: '1.0.0' } } });
-    expect(analyzePackageLock(v1)).toEqual([{ name: 'a', version: '1.0.0', direct: false, via: [], devTools: [] }]);
+    expect(analyzePackageLock(v3)).toEqual({
+      packages: [
+        { name: 'a', version: '1.0.0', direct: false, via: ['app'], devTools: [] },
+        { name: 'p', version: '2.0.0', direct: false, via: ['app'], devTools: [] },
+      ],
+      // Installed by nothing package.json declares: not checked, but not hidden either.
+      skipped: [{ name: 'orphan', version: '3.0.0', reason: 'unused', via: [] }],
+    });
+    const v1 = JSON.stringify({
+      lockfileVersion: 1,
+      dependencies: {
+        a: { version: '1.0.0' },
+        t: { version: '2.0.0', dev: true, dependencies: { u: { version: '1.0.0' } } },
+        g: { version: 'github:x/y#abc' },
+      },
+    });
+    expect(analyzePackageLock(v1)).toEqual({
+      packages: [{ name: 'a', version: '1.0.0', direct: false, via: [], devTools: [] }],
+      skipped: [
+        { name: 'g', version: 'github:x/y#abc', reason: 'unverifiable', via: [] },
+        { name: 't', version: '2.0.0', reason: 'dev', via: [] },
+        { name: 'u', version: '1.0.0', reason: 'dev', via: [] },
+      ],
+    });
     expect(analyzePackageLock('nope')).toBeNull();
+  });
+
+  it('lists non-semver versions as unverifiable, never workspace links', async () => {
+    const result = await audit(copyNamedFixture('dependencies'), { osv: fakeOsv() });
+    expect(result.ignoredDeps.map((d) => `${d.reason}:${d.name}`)).toEqual(['unverifiable:from-git', 'dev:semver']);
+    expect(result.ignoredDeps.find((d) => d.name === 'semver')?.vulns).toEqual(['GHSA-c2qf-rxjj-qqgw']);
   });
 
   it('never enters the build toolchain, even when a runtime package depends on it', () => {
@@ -220,7 +308,9 @@ describe('analyzePackageLock', () => {
         'node_modules/deepmerge': { version: '4.3.1' },
       },
     });
-    expect(analyzePackageLock(v3)?.map((p) => p.name)).toEqual(['expo-constants']);
+    const a = analyzePackageLock(v3);
+    expect(a?.packages.map((p) => p.name)).toEqual(['expo-constants']);
+    expect(a?.skipped.map((p) => `${p.reason}:${p.name}`)).toEqual(['build:@expo/config', 'build:deepmerge']);
   });
 });
 

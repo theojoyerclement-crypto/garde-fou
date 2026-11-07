@@ -1,6 +1,15 @@
 import { compareSemver } from '../osv';
 import { basenameOf, lineOf } from '../patterns';
-import { SEVERITY_ORDER, type Finding, type OsvPackage, type OsvVuln, type Rule, type ScanContext, type Severity } from '../types';
+import {
+  SEVERITY_ORDER,
+  type Finding,
+  type IgnoredReason,
+  type OsvPackage,
+  type OsvVuln,
+  type Rule,
+  type ScanContext,
+  type Severity,
+} from '../types';
 
 /**
  * Production dependencies with published vulnerabilities, looked up on
@@ -144,19 +153,47 @@ export interface ProdPackage extends OsvPackage {
   devTools: string[];
 }
 
+/** A package of the lockfile that is not checked as a production dependency. */
+export interface SkippedPackage extends OsvPackage {
+  reason: Exclude<IgnoredReason, 'devTool'>;
+  /** Build tools or devDependencies that install it. */
+  via: string[];
+}
+
+export interface LockAnalysis {
+  packages: ProdPackage[];
+  skipped: SkippedPackage[];
+}
+
 function names(v: unknown): string[] {
   return v && typeof v === 'object' ? Object.keys(v).filter((n) => NPM_NAME.test(n)) : [];
 }
 
+const byNameVersion = (a: OsvPackage, b: OsvPackage) =>
+  a.name.localeCompare(b.name) || compareSemver(a.version, b.version) || a.version.localeCompare(b.version);
+
+/** Skipped packages of a v1 lockfile: dev entries and unverifiable versions. */
+function skippedV1(deps: Record<string, LockEntry>, inDev = false, out = new Map<string, SkippedPackage>()) {
+  for (const [name, e] of Object.entries(deps)) {
+    if (!e || typeof e !== 'object' || !NPM_NAME.test(name) || typeof e.version !== 'string') continue;
+    const dev = inDev || e.dev === true;
+    const reason = !PLAIN_SEMVER.test(e.version) ? 'unverifiable' : dev ? 'dev' : null;
+    if (reason) out.set(`${name}@${e.version}`, { name, version: e.version, reason, via: [] });
+    if (e.dependencies && typeof e.dependencies === 'object') skippedV1(e.dependencies, dev, out);
+  }
+  return out;
+}
+
 /**
  * Production packages of a lockfile with the direct dependencies that bring
- * them in. Null if unreadable. Without a `packages` tree (v1) or a root entry,
- * returns the flat list of parsePackageLock().
+ * them in, and every other package with the reason it is not checked as
+ * production (nothing is dropped silently). Null if unreadable. Without a
+ * `packages` tree (v1) or a root entry, uses the flat list of parsePackageLock().
  */
-export function analyzePackageLock(text: string): ProdPackage[] | null {
+export function analyzePackageLock(text: string): LockAnalysis | null {
   const flat = parsePackageLock(text);
   if (!flat) return null;
-  const json = JSON.parse(text) as { packages?: Record<string, LockEntry> };
+  const json = JSON.parse(text) as { packages?: Record<string, LockEntry>; dependencies?: Record<string, LockEntry> };
   const pkgs = json.packages && typeof json.packages === 'object' ? json.packages : null;
   const root = pkgs && Object.hasOwn(pkgs, '') ? pkgs[''] : undefined;
   if (
@@ -165,7 +202,12 @@ export function analyzePackageLock(text: string): ProdPackage[] | null {
     typeof root !== 'object' ||
     (root.dependencies === undefined && root.devDependencies === undefined && root.optionalDependencies === undefined)
   ) {
-    return flat.map((p) => ({ ...p, direct: false, via: [], devTools: [] }));
+    const skipped = !pkgs && json.dependencies && typeof json.dependencies === 'object' ? skippedV1(json.dependencies) : new Map();
+    for (const p of flat) skipped.delete(`${p.name}@${p.version}`);
+    return {
+      packages: flat.map((p) => ({ ...p, direct: false, via: [], devTools: [] })),
+      skipped: [...skipped.values()].sort(byNameVersion),
+    };
   }
 
   const entry = (key: string): LockEntry | undefined => {
@@ -193,13 +235,18 @@ export function analyzePackageLock(text: string): ProdPackage[] | null {
       .map((n) => resolve(key, n))
       .filter((k): k is string => k !== undefined);
 
-  /** Every lock key reachable from `start`, without entering the build toolchain. */
-  const reach = (start: string): Set<string> => {
+  const toolchainKeys = new Set<string>();
+  /** Every lock key reachable from `start`; with `stopAtToolchain`, without entering the build toolchain. */
+  const reach = (start: string, stopAtToolchain = true): Set<string> => {
     const seen = new Set<string>();
     const stack = [start];
     while (stack.length > 0) {
       const key = stack.pop() as string;
-      if (seen.has(key) || BUILD_TOOLCHAIN.has(nameOfKey(key))) continue;
+      if (seen.has(key)) continue;
+      if (stopAtToolchain && BUILD_TOOLCHAIN.has(nameOfKey(key))) {
+        toolchainKeys.add(key);
+        continue;
+      }
       seen.add(key);
       const e = entry(key);
       if (e) stack.push(...childrenOf(key, e));
@@ -226,13 +273,46 @@ export function analyzePackageLock(text: string): ProdPackage[] | null {
     }
   }
 
+  // What the build toolchain and the devDependencies install (to say why it is skipped).
+  const addAll = (map: Map<string, Set<string>>, keys: Iterable<string>, via: string) => {
+    for (const key of keys) {
+      const set = map.get(key) ?? new Set<string>();
+      set.add(via);
+      map.set(key, set);
+    }
+  };
+  const buildVia = new Map<string, Set<string>>();
+  for (const key of toolchainKeys) addAll(buildVia, reach(key, false), nameOfKey(key));
+  const devVia = new Map<string, Set<string>>();
+  for (const name of names(root.devDependencies)) {
+    const start = resolve('', name);
+    if (start) addAll(devVia, reach(start, false), name);
+  }
+
   const out = new Map<string, ProdPackage>();
+  const skipped = new Map<string, SkippedPackage>();
+  const skip = (name: string, version: string, reason: SkippedPackage['reason'], via: Set<string> | undefined) => {
+    const id = `${name}@${version}`;
+    const s = skipped.get(id);
+    // Same name@version skipped at several places for different reasons: the first reason found wins.
+    if (s && s.reason !== reason) return;
+    skipped.set(id, { name, version, reason, via: [...new Set([...(s?.via ?? []), ...(via ?? [])])].sort() });
+  };
   for (const [key, e] of Object.entries(pkgs)) {
     const name = nameOfKey(key);
-    if (!name || !e || typeof e !== 'object' || !keep(name, e)) continue;
-    const runtime = runtimeVia.get(key);
-    const tools = devToolVia.get(key);
-    if (!runtime && !tools) continue; // build toolchain only, or not installed by the app
+    if (!name || !e || typeof e !== 'object' || e.link === true || !NPM_NAME.test(name)) continue;
+    if (typeof e.version !== 'string' || !PLAIN_SEMVER.test(e.version)) {
+      if (typeof e.version === 'string') skip(name, e.version, 'unverifiable', undefined);
+      continue;
+    }
+    const runtime = keep(name, e) ? runtimeVia.get(key) : undefined;
+    const tools = keep(name, e) ? devToolVia.get(key) : undefined;
+    if (!runtime && !tools) {
+      if (buildVia.has(key)) skip(name, e.version, 'build', buildVia.get(key));
+      else if (e.dev === true || e.devOptional === true || devVia.has(key)) skip(name, e.version, 'dev', devVia.get(key));
+      else skip(name, e.version, 'unused', undefined);
+      continue;
+    }
     const id = `${name}@${e.version}`;
     const p = out.get(id) ?? { name, version: e.version, direct: false, via: [], devTools: [] };
     if (runtime) {
@@ -248,7 +328,9 @@ export function analyzePackageLock(text: string): ProdPackage[] | null {
     if (p.direct || p.via.length > 0) p.devTools = [];
     if (p.direct) p.via = [];
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name) || compareSemver(a.version, b.version));
+  // Checked as production through another path: not skipped.
+  for (const id of out.keys()) skipped.delete(id);
+  return { packages: [...out.values()].sort(byNameVersion), skipped: [...skipped.values()].sort(byNameVersion) };
 }
 
 function majorOf(v: string): number {
@@ -283,14 +365,31 @@ export const dependenciesRule: Rule = {
   async run(ctx: ScanContext): Promise<Finding[]> {
     const locks = ctx.files.filter((f) => !f.gitignored && LOCKFILES.has(basenameOf(f.rel)));
     if (locks.length === 0) return [];
+
+    const perLock = locks.map((f) => {
+      const a = analyzePackageLock(f.content) ?? { packages: [], skipped: [] };
+      return { f, deps: a.packages, skipped: a.skipped };
+    });
+    // Everything left out of the findings is listed (summary, --verbose, JSON): nothing is hidden silently.
+    for (const { f, deps, skipped } of perLock) {
+      for (const s of skipped) ctx.ignoredDeps.push({ file: f.rel, ...s, vulns: [] });
+      for (const d of deps) {
+        if (d.devTools.length > 0) {
+          ctx.ignoredDeps.push({ file: f.rel, name: d.name, version: d.version, reason: 'devTool', via: d.devTools, vulns: [] });
+        }
+      }
+    }
     if (!ctx.osv) {
       ctx.notes.add('osv.offline');
       return [];
     }
 
-    const perLock = locks.map((f) => ({ f, deps: analyzePackageLock(f.content) ?? [] }));
     const unique = new Map<string, OsvPackage>();
     for (const { deps } of perLock) for (const d of deps) unique.set(`${d.name}@${d.version}`, { name: d.name, version: d.version });
+    // Ignored packages are checked too, to tell which ones carry known advisories.
+    for (const i of ctx.ignoredDeps) {
+      if (i.reason !== 'unverifiable') unique.set(`${i.name}@${i.version}`, { name: i.name, version: i.version });
+    }
     const queries = [...unique.values()];
 
     const vulnsByKey = new Map<string, OsvVuln[]>();
@@ -305,6 +404,9 @@ export const dependenciesRule: Rule = {
       queries.forEach((q, i) => vulnsByKey.set(`${q.name}@${q.version}`, results[i] ?? []));
     }
     ctx.notes.add('osv.checked');
+    for (const i of ctx.ignoredDeps) {
+      i.vulns = (vulnsByKey.get(`${i.name}@${i.version}`) ?? []).map((v) => v.id).sort();
+    }
 
     const findings: Finding[] = [];
     for (const { f, deps } of perLock) {

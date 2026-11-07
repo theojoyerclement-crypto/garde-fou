@@ -73,6 +73,7 @@ npx gardefou --no-history    # ne pas lire l'historique git
 npx gardefou --offline       # aucun accès réseau (ni OSV ni IA distante)
 npx gardefou --html          # rapport HTML autonome (garde-fou-report.html)
 npx gardefou --ai            # explications IA (Claude, OpenAI ou Ollama), optionnel
+npx gardefou --verbose       # liste les dépendances ignorées (build, dev…) et leurs failles connues
 ```
 
 Code de sortie `1` s'il y a au moins un problème critique ou élevé : idéal en CI.
@@ -92,6 +93,8 @@ your AI coding tool, and a score out of 100. Detection never uses AI. By default
 access is the OSV dependency check (package names and versions only); `--offline` turns off all
 network access.
 
+- `--verbose`: list every ignored dependency (build tools, devDependencies…) with what installs
+  it and its known advisories. Without it, the report shows a one-line count.
 - `--html [file]`: standalone HTML report (no external resource, mobile friendly) with collapsed
   details, repeated problems grouped into one card, copy buttons and a "report a false positive" link that opens a pre-filled GitHub issue with no
   secret, path or code. It contains masked keys: do not commit it.
@@ -102,7 +105,7 @@ network access.
   report is unchanged.
 
 ```bash
-npx gardefou [dir] [--lang fr|en] [--json] [--html [file]] [--ai [provider]] [--no-history] [--offline] [--no-color]
+npx gardefou [dir] [--lang fr|en] [--json] [--html [file]] [--ai [provider]] [--no-history] [--offline] [--no-color] [--verbose]
 ```
 
 Exit code `1` when at least one critical or high issue is found.

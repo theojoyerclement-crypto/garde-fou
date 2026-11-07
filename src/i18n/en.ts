@@ -260,6 +260,28 @@ export const en: Messages = {
     aiInvalid: (c) => `Unknown AI provider: ${c} (choose claude, openai or ollama)`,
     htmlWritten: (f) => `HTML report written: ${f}`,
     htmlError: (f) => `Could not write the HTML report: ${f}`,
+    ignored: {
+      summary: (c, vulnerable, verbose) => {
+        const parts = [
+          c.build ? `${c.build} build dependenc${c.build > 1 ? 'ies' : 'y'} ignored` : '',
+          c.dev ? `${c.dev} dev dependenc${c.dev > 1 ? 'ies' : 'y'} ignored` : '',
+          c.devTool ? `${c.devTool} installed by a dev tool listed in production` : '',
+          c.unused ? `${c.unused} installed by nothing declared` : '',
+          c.unverifiable ? `${c.unverifiable} unverifiable (git, file)` : '',
+        ].filter(Boolean);
+        const vulns = vulnerable === null ? '' : vulnerable === 0 ? ', none with known vulnerabilities' : `, ${vulnerable} with known vulnerabilit${vulnerable > 1 ? 'ies' : 'y'}`;
+        return `${parts.join(', ')}${vulns}${verbose ? '' : ' (details: --verbose)'}`;
+      },
+      title: 'Ignored dependencies (not scored)',
+      reasons: {
+        build: 'Build tools: run on your machine, never in the app',
+        dev: 'Dev dependencies (devDependencies): never in production',
+        devTool: 'Installed by a dev tool listed in "dependencies" (see the reported problem)',
+        unused: 'In the lockfile, but installed by nothing declared in package.json',
+        unverifiable: 'Version that cannot be checked on OSV (git, file, tarball)',
+      },
+      via: (list) => `via ${list}`,
+    },
   },
   html: {
     pageTitle: (t) => `Garde-Fou — report for ${t}`,

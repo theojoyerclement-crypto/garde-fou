@@ -49,7 +49,7 @@ règles Firebase ouvertes, routes API sans auth, dépendances vulnérables.
 
 ```
 src/
-  cli.ts          point d'entrée commander (--lang, --json, --html, --ai, --no-history, --offline, --no-color)
+  cli.ts          point d'entrée commander (--lang, --json, --html, --ai, --no-history, --offline, --no-color, --verbose)
   audit.ts        runAudit(dir) (async) : scanner + git + règles → findings triés + score + notes
   scanner.ts      parcours des fichiers ; respecte les .gitignore (du dossier racine git
                   jusqu'au dossier scanné) ; ignore toujours node_modules/, .git/, fixtures/ ;
@@ -114,6 +114,9 @@ Code de sortie : 1 s'il y a au moins un problème critique ou élevé, 2 si le d
   `metro`…). Dépendance indirecte : `via` = dépendance directe parente (à mettre à jour), `major` =
   correctif en version majeure (jamais d'overrides conseillé). Outil de dev (`DEV_TOOLS` : jest,
   eslint…) dans `dependencies` : un seul problème faible `deps.devToolInProd` par outil, pas un par faille.
+  Rien n'est ignoré en silence : chaque paquet écarté va dans `ctx.ignoredDeps` (raison build / dev /
+  devTool / unused / unverifiable, via, avis OSV). Résumé d'une ligne dans le rapport, liste complète
+  avec `--verbose`, section repliée dans le HTML, champ `ignoredDeps` en JSON. Hors score.
 - **env** : `.env` suivi par git, `.env` présent dans l'historique, `.env` non protégé par
   `.gitignore`, variables sensibles avec préfixe public (`NEXT_PUBLIC_`, `VITE_`,
   `EXPO_PUBLIC_`, `REACT_APP_`) dans les `.env*` et dans le code.

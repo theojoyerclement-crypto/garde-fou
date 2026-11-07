@@ -21,6 +21,7 @@ function fakeResult(findings: Finding[], target = 'demo'): AuditResult {
     gitAvailable: false,
     historyScanned: false,
     notes: [],
+    ignoredDeps: [],
     findings,
     score: 55,
   };

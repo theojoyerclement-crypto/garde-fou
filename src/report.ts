@@ -1,6 +1,6 @@
 import pc from 'picocolors';
 import { messages, type Lang } from './i18n';
-import { SEVERITY_ORDER, type Finding, type Severity } from './types';
+import { SEVERITY_ORDER, type Finding, type IgnoredReason, type Severity } from './types';
 import type { AuditResult } from './audit';
 
 /** Points removed from 100 for each finding of a given severity. */
@@ -85,6 +85,8 @@ export function localizeFinding(f: Finding, lang: Lang, location?: string): Loca
 export interface RenderOptions {
   lang: Lang;
   color: boolean;
+  /** List every ignored dependency (default: a one-line count). */
+  verbose?: boolean;
 }
 
 export function renderReport(result: AuditResult, opts: RenderOptions): string {
@@ -106,7 +108,10 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
       ? m.ui.gitHistoryScanned
       : m.ui.gitHistorySkipped;
   const header = [m.ui.filesScanned(result.filesScanned), gitState, ...result.notes.map((n) => m.ui.notes[n])];
-  out.push(c.dim(header.join(' · ')), '');
+  out.push(c.dim(header.join(' · ')));
+  const ignored = ignoredSummary(result, opts.lang, opts.verbose ?? false);
+  if (ignored) out.push(c.dim(ignored));
+  out.push('');
 
   if (result.findings.length === 0) {
     out.push(c.green(`✔ ${m.ui.noIssues}`), '');
@@ -134,6 +139,15 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
     }
   }
 
+  if (opts.verbose && result.ignoredDeps.length > 0) {
+    out.push(c.bold(m.ui.ignored.title));
+    for (const g of ignoredGroups(result, opts.lang)) {
+      out.push(`  ${g.label} (${g.lines.length})`);
+      for (const l of g.lines) out.push(`    ${l.vulnerable ? c.yellow(l.text) : c.dim(l.text)}`);
+    }
+    out.push('');
+  }
+
   const score = result.score;
   const scoreColor = score >= 90 ? c.green : score >= 60 ? c.yellow : c.red;
   out.push(
@@ -143,4 +157,44 @@ export function renderReport(result: AuditResult, opts: RenderOptions): string {
   );
   out.push(scoreColor(m.ui.verdict(score)), '');
   return out.join('\n');
+}
+
+const IGNORED_ORDER: readonly IgnoredReason[] = ['build', 'devTool', 'dev', 'unused', 'unverifiable'];
+
+/** One-line count of the ignored dependencies, or null when there are none. */
+export function ignoredSummary(result: AuditResult, lang: Lang, verbose: boolean): string | null {
+  if (result.ignoredDeps.length === 0) return null;
+  const counts = Object.fromEntries(IGNORED_ORDER.map((r) => [r, 0])) as Record<IgnoredReason, number>;
+  for (const d of result.ignoredDeps) counts[d.reason]++;
+  const vulnerable = result.notes.includes('osv.checked') ? result.ignoredDeps.filter((d) => d.vulns.length > 0).length : null;
+  return messages(lang).ui.ignored.summary(counts, vulnerable, verbose);
+}
+
+export interface IgnoredGroup {
+  reason: IgnoredReason;
+  label: string;
+  /** "name@version (file) via x, y  ⚠ GHSA-…", cleaned; packages with advisories first. */
+  lines: { text: string; vulnerable: boolean }[];
+}
+
+/** Ignored dependencies grouped by reason, for --verbose and the HTML report. */
+export function ignoredGroups(result: AuditResult, lang: Lang): IgnoredGroup[] {
+  const m = messages(lang).ui.ignored;
+  const manyLocks = new Set(result.ignoredDeps.map((d) => d.file)).size > 1;
+  return IGNORED_ORDER.map((reason) => {
+    const deps = result.ignoredDeps
+      .filter((d) => d.reason === reason)
+      .sort((a, b) => Number(b.vulns.length > 0) - Number(a.vulns.length > 0) || a.name.localeCompare(b.name));
+    const lines = deps.map((d) => {
+      const via = d.via.filter((v) => v !== d.name);
+      const parts = [
+        `${d.name}@${d.version}`,
+        manyLocks ? `(${d.file})` : '',
+        via.length > 0 ? m.via(via.length > 3 ? `${via.slice(0, 3).join(', ')} +${via.length - 3}` : via.join(', ')) : '',
+        d.vulns.length > 0 ? `⚠ ${d.vulns.join(', ')}` : '',
+      ];
+      return { text: cleanParam(parts.filter(Boolean).join('  ')), vulnerable: d.vulns.length > 0 };
+    });
+    return { reason, label: m.reasons[reason], lines };
+  }).filter((g) => g.lines.length > 0);
 }

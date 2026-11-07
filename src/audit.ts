@@ -5,7 +5,7 @@ import { createOsvClient } from './osv';
 import { computeScore, sortFindings } from './report';
 import { rules as defaultRules } from './rules';
 import { scanFiles } from './scanner';
-import type { Finding, NoteId, OsvClient, Rule, ScanContext } from './types';
+import type { Finding, IgnoredDep, NoteId, OsvClient, Rule, ScanContext } from './types';
 
 export interface AuditOptions {
   /** Scan the git history too (default: true). */
@@ -25,6 +25,8 @@ export interface AuditResult {
   gitAvailable: boolean;
   historyScanned: boolean;
   notes: NoteId[];
+  /** Dependencies left out of the findings (build tools, dev…), with their advisories. */
+  ignoredDeps: IgnoredDep[];
   findings: Finding[];
   score: number;
 }
@@ -48,6 +50,7 @@ export async function runAudit(target: string, opts: AuditOptions = {}): Promise
     git,
     osv: opts.offline ? null : (opts.osv ?? createOsvClient()),
     notes: new Set(),
+    ignoredDeps: [],
   };
 
   const perRule = await Promise.all((opts.rules ?? defaultRules).map((r) => r.run(ctx)));
@@ -60,6 +63,7 @@ export async function runAudit(target: string, opts: AuditOptions = {}): Promise
     gitAvailable: git !== null,
     historyScanned: git?.history != null,
     notes: [...ctx.notes].sort(),
+    ignoredDeps: ctx.ignoredDeps,
     findings,
     score: computeScore(findings),
   };

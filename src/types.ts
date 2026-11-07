@@ -104,6 +104,28 @@ export interface OsvClient {
   query(pkgs: readonly OsvPackage[]): Promise<OsvVuln[][]>;
 }
 
+/**
+ * Why a lockfile package is not checked as a production dependency:
+ * build = installed only by the build toolchain (@expo/cli, metro…),
+ * dev = devDependencies, devTool = only through a dev tool listed in
+ * `dependencies` (jest…), unused = installed by nothing the app declares,
+ * unverifiable = version that is not plain semver (git, file, tarball).
+ */
+export type IgnoredReason = 'build' | 'dev' | 'devTool' | 'unused' | 'unverifiable';
+
+/** A dependency left out of the findings, shown in the summary and with --verbose. */
+export interface IgnoredDep {
+  /** Lockfile it comes from (relative path). */
+  file: string;
+  name: string;
+  version: string;
+  reason: IgnoredReason;
+  /** Build tools, devDependencies or dev tools that install it. */
+  via: string[];
+  /** Known advisories (OSV ids); empty when none or not checked (unverifiable). */
+  vulns: string[];
+}
+
 export interface ScanContext {
   root: string;
   files: ScannedFile[];
@@ -111,6 +133,8 @@ export interface ScanContext {
   osv: OsvClient | null;
   /** Rules add diagnostics here (e.g. OSV unreachable). */
   notes: Set<NoteId>;
+  /** Dependencies the dependencies rule leaves out, so nothing is hidden silently. */
+  ignoredDeps: IgnoredDep[];
 }
 
 export interface Rule {
