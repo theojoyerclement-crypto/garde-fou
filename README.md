@@ -8,7 +8,7 @@
 npx gardefou
 ```
 
-![Démo : npx gardefou trouve des clés exposées, une table Supabase ouverte et des règles Firebase ouvertes](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-fr.svg)
+![Démo : npx gardefou trouve des clés d'API en clair et un fichier .env commité, score 0/100](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-fr.svg)
 
 [Français](#français) · [English](#english)
 
@@ -177,7 +177,7 @@ is dangerous, how to fix it, and a **prompt to paste as is** into Lovable, Curso
 Code so it fixes it for you. Prefer a web page? `npx gardefou --html` writes
 `garde-fou-report.html`, to open in your browser.
 
-![Garde-Fou demo in English](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-en.svg)
+![Demo: npx gardefou finds hard-coded API keys and a committed .env file, score 0/100](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/demo-en.svg)
 
 ![Garde-Fou report screenshot](https://raw.githubusercontent.com/theojoyerclement-crypto/garde-fou/main/docs/report-en.svg)
 
