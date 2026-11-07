@@ -43,7 +43,10 @@ const RE_GRANT_OR_REVOKE = new RegExp(
   String.raw`^(revoke|grant)\s+(?:grant\s+option\s+for\s+)?([\s\S]+?)\s+on\s+(?:table\s+)?(${QNAME_LIST}|all\s+tables\s+in\s+schema\s+${ID})\s+(?:from|to)\s+([\s\S]+)$`,
   'i',
 );
-const RE_REASSIGN_OWNED = new RegExp(String.raw`^reassign\s+owned\s+by\s+[\s\S]+?\s+to\s+(${ID})`, 'i');
+const RE_REASSIGN_OWNED = new RegExp(
+  String.raw`^reassign\s+owned\s+by\s+${ID}(?:\s*,\s*${ID})*\s+to\s+(${ID})\s*$`,
+  'i',
+);
 /** Roles the Supabase API uses. A table is closed only when both lose every privilege. */
 const API_ROLES = ['anon', 'authenticated'] as const;
 const TABLE_PRIVILEGES = ['select', 'insert', 'update', 'delete'] as const;
@@ -357,8 +360,10 @@ function replay(
         continue;
       }
       // An owner has every privilege: unless it is an admin role, reopen the table.
-      const owner = new RegExp(String.raw`\bowner\s+to\s+(${ID})`, 'i').exec(actions);
-      if (owner && !ADMIN_ROLES.has(normalizeIdent(owner[1] ?? ''))) tables.get(key)?.revoked.clear();
+      // Any OWNER TO a non-admin role (or one we cannot read) reopens it.
+      for (const owner of actions.matchAll(new RegExp(String.raw`\bowner\s+to\s+(${ID})?`, 'gi'))) {
+        if (!owner[1] || !ADMIN_ROLES.has(normalizeIdent(owner[1]))) tables.get(key)?.revoked.clear();
+      }
       const rls = /\b(enable|disable)\s+row\s+level\s+security\b/i.exec(actions);
       if (!rls) continue;
       const enabled = rls[1]?.toLowerCase() === 'enable';
@@ -406,8 +411,10 @@ function replay(
       continue;
     }
 
-    if ((m = RE_REASSIGN_OWNED.exec(s))) {
-      if (!ADMIN_ROLES.has(normalizeIdent(m[1] ?? ''))) for (const t of tables.values()) t.revoked.clear();
+    if (/^reassign\s+owned\b/i.test(s)) {
+      // Unparsable or non-admin target: fail closed, every table is reopened.
+      m = RE_REASSIGN_OWNED.exec(s);
+      if (!m || !ADMIN_ROLES.has(normalizeIdent(m[1] ?? ''))) for (const t of tables.values()) t.revoked.clear();
       continue;
     }
 

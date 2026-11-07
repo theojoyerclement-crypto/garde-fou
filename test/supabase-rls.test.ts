@@ -144,6 +144,9 @@ describe('supabase-rls detection is not bypassed', () => {
     const base = 'create table public.a (id int);\nrevoke all on public.a from anon, authenticated;\n';
     expect(await noRls(`${base}reassign owned by app to authenticated;`)).toEqual(['a']);
     expect(await noRls(`${base}reassign owned by app to postgres;`)).toEqual([]);
+    expect(await noRls(`${base}reassign owned by "x to postgres" to anon;`)).toEqual(['a']);
+    expect(await noRls(`${base}reassign owned by app to postgres garbage;`)).toEqual(['a']);
+    expect(await noRls(`${base}alter table public.a owner to postgres, owner to anon;`)).toEqual(['a']);
   });
 
   it('closes a table when the schema-wide revoke covers it', async () => {
