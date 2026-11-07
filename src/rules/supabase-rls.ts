@@ -295,6 +295,26 @@ export const supabaseRlsRule: Rule = {
   },
 };
 
+/**
+ * Tables of the `public` schema that exist after replaying every project's
+ * migrations (dropped tables excluded). Used by --supabase-live.
+ */
+export function publicTables(files: readonly ScannedFile[]): string[] {
+  const projects = new Map<string, ScannedFile[]>();
+  for (const f of files) {
+    if (f.gitignored || !isSupabaseSql(f.rel)) continue;
+    const key = supabaseProjectOf(f.rel);
+    projects.set(key, [...(projects.get(key) ?? []), f]);
+  }
+  const out = new Set<string>();
+  for (const sqlFiles of projects.values()) {
+    const tables = new Map<string, TableState>();
+    for (const f of [...sqlFiles].sort((a, b) => a.rel.localeCompare(b.rel))) replay(f, tables, new Map());
+    for (const key of tables.keys()) if (key.startsWith('public.')) out.add(displayTable(key));
+  }
+  return [...out].sort();
+}
+
 function checkProject(sqlFiles: ScannedFile[]): Finding[] {
   const tables = new Map<string, TableState>();
   const policies = new Map<string, OpenPolicy>();

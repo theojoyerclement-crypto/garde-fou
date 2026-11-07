@@ -62,6 +62,64 @@ passe dans les URL, valeurs des `.env`…) ; une requête qui contiendrait encor
 reconnaissable n'est pas envoyée. Sans clé, hors ligne ou en cas d'erreur, le rapport est
 identique, avec une simple mention. Les réponses de l'IA sont à vérifier.
 
+### Agents IA : serveur MCP (`gardefou mcp`)
+
+Claude Code, Cursor ou tout client MCP peut lancer l'audit lui-même. Le serveur (stdio) expose
+deux outils **en lecture seule**, qui ne modifient jamais vos fichiers :
+
+- `scan_project` (`path`, `lang`, `history`, `offline`) : problèmes (clés masquées) et score sur 100 ;
+- `explain_finding` (`messageId`, `params`, `file`, `line`) : risque, correctif et prompt de correction.
+
+```bash
+claude mcp add gardefou -- npx gardefou mcp
+```
+
+```json
+{ "mcpServers": { "gardefou": { "command": "npx", "args": ["gardefou", "mcp"] } } }
+```
+
+### GitHub Action
+
+Scan à chaque pull request, résumé dans le *job summary*, rapport HTML en artefact, échec à partir
+de la gravité choisie (`fail-on`, `critical` par défaut). Les logs ne contiennent que le résumé :
+aucun secret, même masqué.
+
+```yaml
+# .github/workflows/garde-fou.yml
+name: Garde-Fou
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # historique git complet (secrets supprimés depuis)
+      - uses: theojoyerclement-crypto/garde-fou@main
+        with:
+          fail-on: critical       # critical | high | medium | low | none
+          lang: fr
+```
+
+Entrées : `path` (`.`), `fail-on` (`critical`), `lang` (`en`), `offline` (`false`), `history`
+(`true`), `report-name` (`garde-fou-report`). Sorties : `score`, `exit-code`.
+
+### Test Supabase en direct (`--supabase-live`)
+
+Les migrations ne disent pas tout : `--supabase-live` vérifie sur votre vrai projet si la clé
+publique (anon) permet de lire des données.
+
+- Utilise **uniquement** l'URL et la clé anon / publishable trouvées dans le projet (ou données par
+  `--supabase-url` et `--supabase-key`). Une clé `service_role` ou `sb_secret_` est **refusée**.
+- **Strictement en lecture** : une requête `GET …?select=*&limit=1` par table (tables des
+  migrations et de l'API), aucune écriture.
+- Si des lignes sont lisibles : problème **critique**, sans jamais afficher ni enregistrer les données.
+- Demande de taper « c'est mon projet » avant tout envoi (sauf `--yes`). Incompatible avec `--offline`.
+
+**Ne l'utilisez que sur un projet qui vous appartient.**
+
 ### Options
 
 ```bash
@@ -74,9 +132,13 @@ npx gardefou --offline       # aucun accès réseau (ni OSV ni IA distante)
 npx gardefou --html          # rapport HTML autonome (garde-fou-report.html)
 npx gardefou --ai            # explications IA (Claude, OpenAI ou Ollama), optionnel
 npx gardefou --verbose       # liste les dépendances ignorées (build, dev…) et leurs failles connues
+npx gardefou --fail-on critical   # code 1 seulement à partir de cette gravité (défaut : high)
+npx gardefou --markdown resume.md # résumé Markdown sans secret (CI)
+npx gardefou --supabase-live      # test Supabase en direct, lecture seule (voir plus haut)
+npx gardefou mcp             # serveur MCP pour les agents IA
 ```
 
-Code de sortie `1` s'il y a au moins un problème critique ou élevé : idéal en CI.
+Code de sortie `1` s'il y a au moins un problème critique ou élevé (réglable avec `--fail-on`), `2` en cas d'erreur.
 
 ## English
 
@@ -93,6 +155,17 @@ your AI coding tool, and a score out of 100. Detection never uses AI. By default
 access is the OSV dependency check (package names and versions only); `--offline` turns off all
 network access.
 
+- `gardefou mcp`: MCP server (stdio) for AI agents, read-only tools `scan_project` and
+  `explain_finding` (`claude mcp add gardefou -- npx gardefou mcp`).
+- GitHub Action: `uses: theojoyerclement-crypto/garde-fou@main` with `fail-on` (default
+  `critical`), `lang`, `path`, `offline`, `history`; job summary without secrets, HTML report as
+  an artifact (workflow example in the French section above).
+- `--fail-on <critical|high|medium|low|none>`: exit code `1` from this severity (default `high`);
+  `--markdown <file>`: Markdown summary without any secret (used by the Action).
+- `--supabase-live`: checks on your real Supabase project whether the public anon key can read
+  rows. Anon / publishable key only (service_role refused), one `GET select=*&limit=1` per table,
+  no write, data never shown; asks you to type "this is my project" unless `--yes`. Only use it
+  on your own project.
 - `--verbose`: list every ignored dependency (build tools, devDependencies…) with what installs
   it and its known advisories. Without it, the report shows a one-line count.
 - `--html [file]`: standalone HTML report (no external resource, mobile friendly) with collapsed
@@ -106,9 +179,11 @@ network access.
 
 ```bash
 npx gardefou [dir] [--lang fr|en] [--json] [--html [file]] [--ai [provider]] [--no-history] [--offline] [--no-color] [--verbose]
+         [--fail-on <severity>] [--markdown <file>] [--supabase-live [--supabase-url <url>] [--supabase-key <key>] [--yes]]
+npx gardefou mcp
 ```
 
-Exit code `1` when at least one critical or high issue is found.
+Exit code `1` when at least one critical or high issue is found (see `--fail-on`), `2` on error.
 
 ## Développement · Development
 

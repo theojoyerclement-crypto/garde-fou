@@ -39,6 +39,22 @@ export interface Messages {
     aiInvalid: (choice: string) => string;
     htmlWritten: (file: string) => string;
     htmlError: (file: string) => string;
+    live: {
+      confirm: (host: string) => string;
+      /** Accepted answers (compared trimmed, case-insensitive). */
+      phrases: string[];
+      needsYes: string;
+      offline: string;
+    };
+    failOnInvalid: (value: string) => string;
+    markdownError: (file: string) => string;
+    markdown: {
+      severity: string;
+      problem: string;
+      location: string;
+      more: (n: number) => string;
+      failed: (level: string) => string;
+    };
     ignored: {
       /** One line for the header. `vulnerable` is null when OSV was not queried. */
       summary: (counts: Record<IgnoredReason, number>, vulnerable: number | null, verbose: boolean) => string;

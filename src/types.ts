@@ -21,7 +21,8 @@ export type MessageId =
   | 'api.noAuthPrivileged'
   | 'api.noAuthAI'
   | 'deps.vulnerable'
-  | 'deps.devToolInProd';
+  | 'deps.devToolInProd'
+  | 'supabase.liveReadable';
 
 export interface Finding {
   ruleId: string;
@@ -82,7 +83,14 @@ export type NoteId =
   | 'ai.used'
   | 'ai.noKey'
   | 'ai.error'
-  | 'ai.offline';
+  | 'ai.offline'
+  | 'supabase.liveChecked'
+  | 'supabase.liveErrors'
+  | 'supabase.liveNotFound'
+  | 'supabase.liveAmbiguous'
+  | 'supabase.liveBadKey'
+  | 'supabase.liveBadUrl'
+  | 'supabase.liveDeclined';
 
 export interface OsvPackage {
   name: string;

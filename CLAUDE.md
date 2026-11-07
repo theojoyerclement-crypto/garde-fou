@@ -30,7 +30,12 @@ règles Firebase ouvertes, routes API sans auth, dépendances vulnérables.
 4. **Pas d'IA dans la détection.** Les règles sont 100 % locales et déterministes. Accès
    réseau possibles : la règle `dependencies` (OSV.dev, noms + versions des paquets) et l'option
    `--ai` (explications seulement, jamais de détection, jamais de changement de gravité ou de
-   score). `--offline` coupe les deux (Ollama reste permis sur une adresse locale).
+   score), et `--supabase-live` (projet Supabase de l'utilisateur : clé anon / publishable seulement,
+   service_role refusée, GET `select=*&limit=1` par table, jamais d'écriture, données jamais
+   affichées ni stockées, confirmation « c'est mon projet » ou `--yes`). `--offline` coupe tout
+   (Ollama reste permis sur une adresse locale). Le serveur MCP est en lecture seule (ni `--ai` ni
+   `--supabase-live`). Les logs de l'Action ne montrent que le résumé Markdown (`src/ci.ts`), sans
+   aucune valeur de secret, même masquée.
    Tout ce qui part vers une IA passe par `redactSecrets()` (`src/ai/redact.ts`) puis
    `isRedacted()` ; ne jamais contourner. La sortie de l'IA est non fiable : `cleanAiText()`
    puis échappement. Les tests n'accèdent jamais au réseau (clients OSV et IA factices).
@@ -49,7 +54,11 @@ règles Firebase ouvertes, routes API sans auth, dépendances vulnérables.
 
 ```
 src/
-  cli.ts          point d'entrée commander (--lang, --json, --html, --ai, --no-history, --offline, --no-color, --verbose)
+  cli.ts          point d'entrée commander (--lang, --json, --html, --markdown, --fail-on, --ai,
+                  --supabase-live, --no-history, --offline, --no-color, --verbose) + sous-commande mcp
+  mcp.ts          serveur MCP stdio (JSON-RPC) : scan_project, explain_finding ; lecture seule
+  ci.ts           résumé Markdown sans secret (job summary) et --fail-on
+  supabase-live.ts  --supabase-live : URL + clé anon, select limit 1 par table, client injectable
   audit.ts        runAudit(dir) (async) : scanner + git + règles → findings triés + score + notes
   scanner.ts      parcours des fichiers ; respecte les .gitignore (du dossier racine git
                   jusqu'au dossier scanné) ; ignore toujours node_modules/, .git/, fixtures/ ;
@@ -84,7 +93,9 @@ test/                      tests vitest
 ## Gravité et score
 
 `critical` (-30), `high` (-15), `medium` (-5), `low` (-2), score plancher 0.
-Code de sortie : 1 s'il y a au moins un problème critique ou élevé, 2 si le dossier est introuvable.
+Code de sortie : 1 s'il y a au moins un problème critique ou élevé (seuil réglable : `--fail-on`),
+2 si le dossier est introuvable ou une option invalide. `action.yml` (GitHub Action composite) :
+`fail-on: critical` par défaut, entrées passées par `env`, rapport HTML en artefact.
 
 ## Règles actuelles
 

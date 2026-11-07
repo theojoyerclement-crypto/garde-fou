@@ -216,6 +216,15 @@ export const fr: Messages = {
                 : `Si aucune version de ${p.via} ne convient, ajoute un overrides vers ${p.fixed} dans package.json et lance les tests.`)
             : `La dépendance ${p.pkg} est en version ${p.version}, qui a des vulnérabilités connues (${p.ids}). Mets-la à jour vers ${p.fixed} ou plus récent : si c'est une dépendance directe, change sa version dans package.json ; sinon, mets à jour le paquet qui l'installe (npm ls ${p.pkg})${p.major ? ` (pas d'overrides : ${p.fixed} est une version majeure, risque de casse)` : ' ou ajoute un overrides dans package.json'}. Régénère package-lock.json avec npm install, puis corrige ce qui casse si l'API a changé.`,
     },
+    'supabase.liveReadable': {
+      title: (p) => `Table ${p.table} : ses données sont lisibles par n'importe qui (test en direct)`,
+      why: (p) =>
+        `Avec la seule clé publique (anon) de votre projet ${p.host}, Garde-Fou a pu lire au moins une ligne de la table ${p.table}. Cette clé est dans le code de votre site : n'importe quel visiteur peut donc télécharger le contenu de cette table. Garde-Fou n'a ni affiché ni enregistré ces données.`,
+      fix: (p) =>
+        `Activez la Row Level Security (alter table public.${p.table} enable row level security;), puis ajoutez une policy select limitée au propriétaire (auth.uid() = user_id) ou aux seules lignes vraiment publiques. Relancez gardefou --supabase-live pour vérifier.`,
+      prompt: (p) =>
+        `Dans mon projet Supabase, la table public.${p.table} est lisible par n'importe qui avec la clé anon (vérifié en direct). Écris une migration qui active la Row Level Security sur cette table et ajoute une policy select qui ne laisse lire que les lignes de l'utilisateur connecté (auth.uid() = la colonne propriétaire), ou seulement les lignes publiques si la table contient du contenu public. Ne touche pas aux autres tables et explique-moi la policy choisie.`,
+    },
     'deps.devToolInProd': {
       title: (p) => `${p.pkg} est rangé dans les dépendances de production`,
       why: (p) =>
@@ -244,6 +253,16 @@ export const fr: Messages = {
       'ai.noKey': 'IA désactivée : aucune clé (ANTHROPIC_API_KEY ou OPENAI_API_KEY)',
       'ai.error': "IA indisponible pour certains problèmes : rapport sans explication IA",
       'ai.offline': 'IA désactivée par --offline',
+      'supabase.liveChecked': 'Supabase testé en direct (lecture seule, clé anon)',
+      'supabase.liveErrors': 'Supabase en direct : certaines tables n’ont pas pu être testées',
+      'supabase.liveNotFound':
+        'Supabase en direct non lancé : URL ou clé anon introuvable (--supabase-url, --supabase-key)',
+      'supabase.liveAmbiguous':
+        'Supabase en direct non lancé : plusieurs projets ou clés trouvés, précisez --supabase-url et --supabase-key',
+      'supabase.liveBadKey':
+        'Supabase en direct refusé : seule une clé anon / publishable est acceptée, jamais service_role ni secret',
+      'supabase.liveBadUrl': 'Supabase en direct refusé : URL invalide (https attendu)',
+      'supabase.liveDeclined': 'Supabase en direct annulé (non confirmé)',
     },
     inHistory: (commit) => `historique git, commit ${commit}`,
     score: 'Score',
@@ -261,6 +280,22 @@ export const fr: Messages = {
     aiInvalid: (c) => `Fournisseur IA inconnu : ${c} (choix : claude, openai, ollama)`,
     htmlWritten: (f) => `Rapport HTML écrit : ${f}`,
     htmlError: (f) => `Impossible d'écrire le rapport HTML : ${f}`,
+    live: {
+      confirm: (host) =>
+        `--supabase-live va lire votre base Supabase ${host} avec la clé publique (anon) : une requête « select … limit 1 » par table, aucune écriture, aucune donnée affichée.\nNe le faites que sur votre propre projet. Tapez « c'est mon projet » pour continuer : `,
+      phrases: ["c'est mon projet", 'c’est mon projet'],
+      needsYes: '--supabase-live demande une confirmation : lancez-le dans un terminal, ou ajoutez --yes.',
+      offline: '--supabase-live est incompatible avec --offline.',
+    },
+    failOnInvalid: (v) => `Valeur de --fail-on inconnue : ${v} (critical, high, medium, low ou none)`,
+    markdownError: (f) => `Impossible d'écrire le résumé Markdown : ${f}`,
+    markdown: {
+      severity: 'Gravité',
+      problem: 'Problème',
+      location: 'Emplacement',
+      more: (n) => `… et ${n} autre${n > 1 ? 's' : ''} : voir le rapport HTML.`,
+      failed: (level) => `Échec : au moins un problème de gravité « ${level} » ou plus.`,
+    },
     ignored: {
       summary: (c, vulnerable, verbose) => {
         const s = (n: number) => (n > 1 ? 's' : '');

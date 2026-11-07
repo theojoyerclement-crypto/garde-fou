@@ -1,0 +1,104 @@
+name: Garde-Fou
+description: Security audit for AI-generated projects (secrets, .env, Supabase RLS, Firebase rules, API routes, dependencies).
+author: theojoyerclement-crypto
+branding:
+  icon: shield
+  color: green
+
+inputs:
+  path:
+    description: Directory to audit, relative to the workspace.
+    default: .
+  fail-on:
+    description: Fail the job from this severity on (critical, high, medium, low or none).
+    default: critical
+  lang:
+    description: Language of the summary and report (fr or en).
+    default: en
+  offline:
+    description: "true: no network (skips the OSV dependency check)."
+    default: "false"
+  history:
+    description: "false: do not scan the git history (needs fetch-depth: 0 to be complete)."
+    default: "true"
+  report-name:
+    description: Name of the artifact holding the HTML report.
+    default: garde-fou-report
+
+outputs:
+  score:
+    description: Score out of 100.
+    value: ${{ steps.scan.outputs.score }}
+  exit-code:
+    description: "0 = below fail-on, 1 = at or above fail-on, 2 = error."
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Build Garde-Fou
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --no-audit --no-fund --ignore-scripts --loglevel=error
+        npm run build --silent
+
+    # Inputs go through env, never interpolated into the script (no injection).
+    # The terminal report (masked keys, prompts) is NOT printed: only the
+    # Markdown summary, which never contains secrets, reaches the logs.
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        GF_PATH: ${{ inputs.path }}
+        GF_FAIL_ON: ${{ inputs.fail-on }}
+        GF_LANG: ${{ inputs.lang }}
+        GF_OFFLINE: ${{ inputs.offline }}
+        GF_HISTORY: ${{ inputs.history }}
+        GF_CLI: ${{ github.action_path }}/dist/cli.js
+      run: |
+        set +e
+        args=("$GF_PATH" --no-color --lang "$GF_LANG" --fail-on "$GF_FAIL_ON" --json
+              --markdown "$RUNNER_TEMP/garde-fou-summary.md" --html "$RUNNER_TEMP/garde-fou-report.html")
+        if [ "$GF_OFFLINE" = "true" ]; then args+=(--offline); fi
+        if [ "$GF_HISTORY" = "false" ]; then args+=(--no-history); fi
+        node "$GF_CLI" "${args[@]}" > "$RUNNER_TEMP/garde-fou.json" 2> "$RUNNER_TEMP/garde-fou.err"
+        code=$?
+        set -e
+        if [ -f "$RUNNER_TEMP/garde-fou-summary.md" ]; then
+          cat "$RUNNER_TEMP/garde-fou-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/garde-fou-summary.md"
+        fi
+        score=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(r.score))}catch{}' "$RUNNER_TEMP/garde-fou.json")
+        echo "score=$score" >> "$GITHUB_OUTPUT"
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        rm -f "$RUNNER_TEMP/garde-fou.json"
+        if [ "$code" = "2" ]; then
+          echo "::error title=Garde-Fou::$(head -c 300 "$RUNNER_TEMP/garde-fou.err" | tr '\r\n%' '   ' | sed 's/::/: :/g')"
+        fi
+
+    - name: Upload HTML report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.report-name }}
+        path: ${{ runner.temp }}/garde-fou-report.html
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - name: Apply fail-on
+      if: steps.scan.outputs.exit-code != '0'
+      shell: bash
+      env:
+        GF_CODE: ${{ steps.scan.outputs.exit-code }}
+        GF_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        if [ "$GF_CODE" = "1" ]; then
+          echo "::error title=Garde-Fou::Problems at or above '$GF_FAIL_ON' (see the job summary and the HTML report artifact)."
+        fi
+        exit 1

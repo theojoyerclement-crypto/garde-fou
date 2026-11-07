@@ -216,6 +216,15 @@ export const en: Messages = {
                 : `If no version of ${p.via} works, add an overrides entry for ${p.fixed} to package.json and run the tests.`)
             : `The dependency ${p.pkg} is at version ${p.version}, which has known vulnerabilities (${p.ids}). Upgrade it to ${p.fixed} or later: if it is a direct dependency, change its version in package.json; otherwise upgrade the package that pulls it in (npm ls ${p.pkg})${p.major ? ` (no overrides: ${p.fixed} is a major version, it could break things)` : ' or add an overrides entry to package.json'}. Regenerate package-lock.json with npm install, then fix whatever breaks if the API changed.`,
     },
+    'supabase.liveReadable': {
+      title: (p) => `Table ${p.table}: its data can be read by anyone (live test)`,
+      why: (p) =>
+        `With nothing but the public (anon) key of your project ${p.host}, Garde-Fou could read at least one row of the ${p.table} table. That key ships in your site's code: any visitor can download the content of this table. Garde-Fou neither displayed nor stored the data.`,
+      fix: (p) =>
+        `Enable Row Level Security (alter table public.${p.table} enable row level security;), then add a select policy limited to the owner (auth.uid() = user_id) or to the rows that are really public. Run gardefou --supabase-live again to check.`,
+      prompt: (p) =>
+        `In my Supabase project, the public.${p.table} table can be read by anyone with the anon key (checked live). Write a migration that enables Row Level Security on this table and adds a select policy that only lets the signed-in user read their own rows (auth.uid() = the owner column), or only the public rows if the table holds public content. Do not touch other tables and explain the policy you chose.`,
+    },
     'deps.devToolInProd': {
       title: (p) => `${p.pkg} is listed as a production dependency`,
       why: (p) =>
@@ -244,6 +253,14 @@ export const en: Messages = {
       'ai.noKey': 'AI off: no key (ANTHROPIC_API_KEY or OPENAI_API_KEY)',
       'ai.error': 'AI unavailable for some issues: report without AI explanation',
       'ai.offline': 'AI off because of --offline',
+      'supabase.liveChecked': 'Supabase tested live (read-only, anon key)',
+      'supabase.liveErrors': 'Supabase live: some tables could not be tested',
+      'supabase.liveNotFound': 'Supabase live not run: URL or anon key not found (--supabase-url, --supabase-key)',
+      'supabase.liveAmbiguous':
+        'Supabase live not run: several projects or keys found, give --supabase-url and --supabase-key',
+      'supabase.liveBadKey': 'Supabase live refused: only an anon / publishable key is accepted, never service_role or secret',
+      'supabase.liveBadUrl': 'Supabase live refused: invalid URL (https expected)',
+      'supabase.liveDeclined': 'Supabase live cancelled (not confirmed)',
     },
     inHistory: (commit) => `git history, commit ${commit}`,
     score: 'Score',
@@ -260,6 +277,22 @@ export const en: Messages = {
     aiInvalid: (c) => `Unknown AI provider: ${c} (choose claude, openai or ollama)`,
     htmlWritten: (f) => `HTML report written: ${f}`,
     htmlError: (f) => `Could not write the HTML report: ${f}`,
+    live: {
+      confirm: (host) =>
+        `--supabase-live will read your Supabase database ${host} with the public (anon) key: one "select … limit 1" request per table, no write, no data shown.\nOnly do this on your own project. Type "this is my project" to continue: `,
+      phrases: ['this is my project'],
+      needsYes: '--supabase-live needs a confirmation: run it in a terminal, or add --yes.',
+      offline: '--supabase-live cannot be used with --offline.',
+    },
+    failOnInvalid: (v) => `Unknown --fail-on value: ${v} (critical, high, medium, low or none)`,
+    markdownError: (f) => `Could not write the Markdown summary: ${f}`,
+    markdown: {
+      severity: 'Severity',
+      problem: 'Problem',
+      location: 'Location',
+      more: (n) => `… and ${n} more: see the HTML report.`,
+      failed: (level) => `Failed: at least one problem of severity "${level}" or above.`,
+    },
     ignored: {
       summary: (c, vulnerable, verbose) => {
         const parts = [

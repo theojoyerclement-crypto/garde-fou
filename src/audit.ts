@@ -5,6 +5,7 @@ import { createOsvClient } from './osv';
 import { computeScore, sortFindings } from './report';
 import { rules as defaultRules } from './rules';
 import { scanFiles } from './scanner';
+import { checkSupabaseLive, createSupabaseLiveClient, resolveTarget, type SupabaseLiveClient } from './supabase-live';
 import type { Finding, IgnoredDep, NoteId, OsvClient, Rule, ScanContext } from './types';
 
 export interface AuditOptions {
@@ -15,6 +16,17 @@ export interface AuditOptions {
   /** OSV client to use (tests inject a fake one). */
   osv?: OsvClient;
   rules?: readonly Rule[];
+  /** --supabase-live: read-only test against the real project (never with `offline`). */
+  supabaseLive?: SupabaseLiveOptions;
+}
+
+export interface SupabaseLiveOptions {
+  client?: SupabaseLiveClient;
+  /** User-given URL / anon key; the rest is looked up in the project. */
+  url?: string;
+  key?: string;
+  /** Asked once the target is known; nothing is sent before it returns true. */
+  confirm: (info: { host: string }) => Promise<boolean>;
 }
 
 export interface AuditResult {
@@ -54,7 +66,9 @@ export async function runAudit(target: string, opts: AuditOptions = {}): Promise
   };
 
   const perRule = await Promise.all((opts.rules ?? defaultRules).map((r) => r.run(ctx)));
-  const findings = sortFindings(perRule.flat());
+  const all = perRule.flat();
+  if (opts.supabaseLive && !opts.offline) all.push(...(await runSupabaseLive(files, opts.supabaseLive, ctx.notes)));
+  const findings = sortFindings(all);
 
   return {
     target,
@@ -67,4 +81,31 @@ export async function runAudit(target: string, opts: AuditOptions = {}): Promise
     findings,
     score: computeScore(findings),
   };
+}
+
+const LIVE_PROBLEM_NOTES = {
+  notFound: 'supabase.liveNotFound',
+  ambiguous: 'supabase.liveAmbiguous',
+  badKey: 'supabase.liveBadKey',
+  badUrl: 'supabase.liveBadUrl',
+} as const satisfies Record<string, NoteId>;
+
+async function runSupabaseLive(
+  files: ScanContext['files'],
+  opts: SupabaseLiveOptions,
+  notes: Set<NoteId>,
+): Promise<Finding[]> {
+  const resolved = resolveTarget(files, { url: opts.url, key: opts.key });
+  if (!resolved.ok) {
+    notes.add(LIVE_PROBLEM_NOTES[resolved.problem]);
+    return [];
+  }
+  if (!(await opts.confirm({ host: new URL(resolved.target.url).host }))) {
+    notes.add('supabase.liveDeclined');
+    return [];
+  }
+  const res = await checkSupabaseLive(files, resolved.target, opts.client ?? createSupabaseLiveClient());
+  notes.add('supabase.liveChecked');
+  if (res.errors > 0) notes.add('supabase.liveErrors');
+  return res.findings;
 }
