@@ -65,6 +65,68 @@ export const fr: Messages = {
       prompt: (p) =>
         `La variable ${p.name} contient une clé ${p.provider} secrète et son préfixe ${p.prefix} l'envoie au navigateur. Renomme-la sans le préfixe ${p.prefix} partout (fichiers .env et code), utilise-la uniquement côté serveur (route API, server action ou edge function) et adapte le front pour passer par cette route. Je révoque l'ancienne clé moi-même.`,
     },
+    'supabase.noRls': {
+      title: (p) => `Table ${p.table} sans Row Level Security (Supabase)`,
+      why: () =>
+        "Sans RLS, n'importe qui possédant la clé anon (elle est publique : visible dans le code de votre site) peut lire, modifier et supprimer toutes les lignes de cette table via l'API Supabase.",
+      fix: (p) =>
+        `Ajoutez une migration avec « alter table public.${p.table} enable row level security; », puis des policies qui limitent l'accès (par exemple auth.uid() = user_id).`,
+      prompt: (p) =>
+        `Dans Supabase, la table public.${p.table} (${p.location}) n'a pas de Row Level Security : n'importe quel visiteur peut lire et modifier toutes ses lignes avec la clé anon. Crée une nouvelle migration SQL qui active la RLS (alter table public.${p.table} enable row level security) et ajoute des policies minimales : chaque utilisateur connecté ne lit et ne modifie que ses propres lignes (auth.uid() égal à la colonne propriétaire, ajoute-la si elle n'existe pas). Ne modifie pas les migrations déjà appliquées. Dis-moi ensuite quelles fonctionnalités de l'app dépendaient d'un accès plus large.`,
+    },
+    'supabase.openWritePolicy': {
+      title: (p) => `Policy « ${p.policy} » : tout le monde peut faire ${p.command} sur ${p.table}`,
+      why: (p) =>
+        `La condition de cette policy est « true » : elle ne vérifie rien. Le rôle ${p.roles} peut donc modifier ou supprimer n'importe quelle ligne, y compris celles des autres utilisateurs (la clé anon est publique).`,
+      fix: () =>
+        "Dans une nouvelle migration, supprimez la policy (drop policy) et recréez-la avec une condition liée à l'utilisateur, par exemple « auth.uid() = user_id ».",
+      prompt: (p) =>
+        `Dans Supabase, la policy « ${p.policy} » de la table ${p.table} (${p.location}) autorise ${p.command} avec la condition true, donc n'importe qui peut modifier ou supprimer les lignes des autres. Crée une nouvelle migration qui supprime cette policy et la remplace par une policy qui limite ${p.command} aux lignes de l'utilisateur connecté (auth.uid() égal à la colonne propriétaire), avec une clause with check équivalente. Ne modifie pas les migrations déjà appliquées.`,
+    },
+    'supabase.openInsertPolicy': {
+      title: (p) => `Policy « ${p.policy} » : tout le monde peut ajouter des lignes dans ${p.table}`,
+      why: () =>
+        "La condition « true » laisse n'importe qui insérer des lignes avec n'importe quelles valeurs (spam, faux comptes, données au nom d'un autre). C'est parfois voulu (formulaire de contact public) : vérifiez.",
+      fix: () =>
+        "Si seuls les utilisateurs connectés doivent écrire : « to authenticated » et « with check (auth.uid() = user_id) ». Si l'insertion publique est voulue, limitez les colonnes et ajoutez une protection anti-spam.",
+      prompt: (p) =>
+        `Dans Supabase, la policy « ${p.policy} » de la table ${p.table} (${p.location}) laisse n'importe qui insérer des lignes (with check (true)). Si cette table n'est pas un formulaire public, crée une nouvelle migration qui remplace cette policy par une policy to authenticated avec with check (auth.uid() égal à la colonne propriétaire). Si l'insertion publique est voulue, ne change rien et propose-moi comment limiter les abus (colonnes autorisées, contraintes, rate limit).`,
+    },
+    'supabase.openReadPolicy': {
+      title: (p) => `Policy « ${p.policy} » : ${p.table} est lisible par tout le monde`,
+      why: (p) =>
+        `La condition « true » rend toutes les lignes de ${p.table} lisibles par le rôle ${p.roles}. C'est normal pour du contenu public (articles, produits), pas pour des données personnelles.`,
+      fix: () =>
+        "Vérifiez qu'aucune colonne sensible (e-mail, téléphone, adresse, données privées) n'est dans cette table. Sinon, limitez la lecture avec « auth.uid() = user_id ».",
+      prompt: (p) =>
+        `Dans Supabase, la policy « ${p.policy} » de la table ${p.table} (${p.location}) rend toutes les lignes lisibles avec la condition true. Vérifie si cette table contient des données personnelles ou privées. Si oui, crée une nouvelle migration qui limite la lecture aux lignes de l'utilisateur connecté (auth.uid() égal à la colonne propriétaire) ou déplace les colonnes sensibles dans une table protégée. Si tout est public par design, ne change rien et dis-le-moi.`,
+    },
+    'firebase.openWrite': {
+      title: (p) => `${p.service} : écriture ouverte à tout le monde sur ${p.path}`,
+      why: () =>
+        "La règle autorise l'écriture sans aucune condition : n'importe qui sur Internet peut modifier, remplacer ou effacer ces données, sans même être connecté.",
+      fix: () =>
+        "Exigez au minimum une connexion (« request.auth != null ») et, mieux, que l'utilisateur soit le propriétaire de la donnée (« request.auth.uid == userId »).",
+      prompt: (p) =>
+        `Les règles de sécurité ${p.service} (${p.location}) autorisent n'importe qui à écrire sur ${p.path} sans condition. Réécris ces règles pour que seul un utilisateur connecté puisse écrire, et uniquement dans ses propres données (request.auth != null et request.auth.uid égal à l'identifiant du propriétaire ; pour le Realtime Database : auth != null et auth.uid === $uid). Garde le reste du fonctionnement de l'app et liste-moi les écrans qui pourraient en dépendre.`,
+    },
+    'firebase.openRead': {
+      title: (p) => `${p.service} : toute la base est lisible par tout le monde`,
+      why: () =>
+        "La règle donne accès en lecture à toutes les données, sans condition : n'importe qui peut télécharger la base complète (comptes, messages, commandes…).",
+      fix: () =>
+        'Supprimez la règle globale et ouvrez la lecture collection par collection, uniquement pour ce qui est vraiment public.',
+      prompt: (p) =>
+        `Les règles ${p.service} (${p.location}) autorisent la lecture de toute la base (${p.path}) sans condition. Remplace cette règle globale par des règles par collection : lecture publique uniquement pour les données vraiment publiques, et pour le reste lecture réservée à l'utilisateur connecté propriétaire (request.auth.uid). Liste-moi les collections et ce que tu as choisi pour chacune.`,
+    },
+    'firebase.testMode': {
+      title: (p) => `${p.service} : règles « mode test » ouvertes à tous jusqu'à une date`,
+      why: () =>
+        "Ce sont les règles par défaut du mode test : jusqu'à la date indiquée, tout le monde peut lire et modifier les données. Ensuite, l'app cessera de fonctionner.",
+      fix: () => 'Remplacez-les par de vraies règles basées sur request.auth avant la mise en ligne.',
+      prompt: (p) =>
+        `Les règles ${p.service} (${p.location}) sont encore celles du mode test (request.time < timestamp.date(...)) : tout le monde peut lire et écrire. Écris de vraies règles de sécurité : lecture et écriture réservées à l'utilisateur connecté sur ses propres données (request.auth.uid), lecture publique seulement pour les collections vraiment publiques. Explique-moi chaque règle.`,
+    },
   },
   ui: {
     title: (target) => `Garde-Fou — audit de ${target}`,

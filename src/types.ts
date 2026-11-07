@@ -10,7 +10,14 @@ export type MessageId =
   | 'env.history'
   | 'env.notIgnored'
   | 'env.publicSensitive'
-  | 'env.publicSecretValue';
+  | 'env.publicSecretValue'
+  | 'supabase.noRls'
+  | 'supabase.openWritePolicy'
+  | 'supabase.openInsertPolicy'
+  | 'supabase.openReadPolicy'
+  | 'firebase.openWrite'
+  | 'firebase.openRead'
+  | 'firebase.testMode';
 
 export interface Finding {
   ruleId: string;
