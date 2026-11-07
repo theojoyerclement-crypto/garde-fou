@@ -1,0 +1,13 @@
+{
+  "name": "deps-devtool",
+  "private": true,
+  "version": "0.0.0",
+  "description": "jest listed in dependencies by mistake: one low finding, not one per advisory of its dependencies. Used to test Garde-Fou.",
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {
+    "jest": "30.5.2",
+    "react": "19.0.0"
+  }
+}

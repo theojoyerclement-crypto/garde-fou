@@ -195,13 +195,35 @@ export const fr: Messages = {
       why: () =>
         "Cette version d'une dépendance de production a des failles publiées (base OSV). Les attaquants recherchent justement ces versions connues : ce sont souvent les premières failles exploitées.",
       fix: (p) =>
-        p.fixed
-          ? `Mettez à jour ${p.pkg} vers la version ${p.fixed} ou plus récente. Si ce n'est pas une dépendance directe, mettez à jour le paquet qui l'installe (npm ls ${p.pkg}) ou ajoutez un « overrides » dans package.json.`
-          : `Aucune version corrigée n'est publiée : remplacez ${p.pkg} par une alternative maintenue, ou vérifiez que votre code n'utilise pas la partie vulnérable (https://osv.dev/vulnerability/${p.id}).`,
+        !p.fixed
+          ? `Aucune version corrigée n'est publiée${p.via ? ` (${p.pkg} est installé par ${p.via})` : ''} : remplacez ${p.via || p.pkg} par une alternative maintenue, ou vérifiez que votre code n'utilise pas la partie vulnérable (https://osv.dev/vulnerability/${p.id}).`
+          : p.via
+            ? `${p.pkg} n'est pas dans votre package.json : c'est ${p.via} qui l'installe. Mettez à jour ${p.via} (npm update ${p.viaCmd}, ou sa dernière version), puis vérifiez avec npm ls ${p.pkg} que ${p.pkg} est en ${p.fixed} ou plus. ` +
+              (p.major
+                ? `Attention : ${p.fixed} est une nouvelle version majeure de ${p.pkg} (${p.version} → ${p.fixed}). Ne la forcez pas avec « overrides » : ${p.via} n'est peut-être pas compatible et l'appli risque de casser. Si aucune version de ${p.via} ne l'embarque encore, attendez sa mise à jour.`
+                : `Si aucune version de ${p.via} ne l'embarque encore, ajoutez un « overrides » vers ${p.fixed} dans package.json (même version majeure), puis testez l'appli.`)
+            : `Mettez à jour ${p.pkg} vers la version ${p.fixed} ou plus récente. ` +
+              (p.major
+                ? `C'est une nouvelle version majeure (${p.version} → ${p.fixed}) : lisez ses notes de migration, l'API a pu changer. Si ${p.pkg} n'est pas dans votre package.json, mettez à jour le paquet qui l'installe (npm ls ${p.pkg}) plutôt que de forcer cette version avec « overrides ».`
+                : `Si ce n'est pas une dépendance directe, mettez à jour le paquet qui l'installe (npm ls ${p.pkg}) ou ajoutez un « overrides » dans package.json.`),
       prompt: (p) =>
-        p.fixed
-          ? `La dépendance ${p.pkg} est en version ${p.version}, qui a des vulnérabilités connues (${p.ids}). Mets-la à jour vers ${p.fixed} ou plus récent : si c'est une dépendance directe, change sa version dans package.json ; sinon, mets à jour le paquet qui l'installe (npm ls ${p.pkg}) ou ajoute un overrides dans package.json. Régénère package-lock.json avec npm install, puis corrige ce qui casse si l'API a changé.`
-          : `La dépendance ${p.pkg}@${p.version} a des vulnérabilités connues (${p.ids}) sans version corrigée. Trouve où elle est utilisée (npm ls ${p.pkg}), propose-moi une alternative maintenue et fais la migration si elle est simple.`,
+        !p.fixed
+          ? `La dépendance ${p.pkg}@${p.version} a des vulnérabilités connues (${p.ids}) sans version corrigée${p.via ? `. Elle est installée par ${p.via}` : ''}. Trouve où elle est utilisée (npm ls ${p.pkg}), propose-moi une alternative maintenue et fais la migration si elle est simple.`
+          : p.via
+            ? `La dépendance ${p.pkg}@${p.version} a des vulnérabilités connues (${p.ids}), corrigées en ${p.fixed}. Elle n'est pas dans package.json : c'est ${p.via} qui l'installe. Mets à jour ${p.via} vers une version qui embarque ${p.pkg} ${p.fixed} ou plus (vérifie avec npm ls ${p.pkg}), régénère package-lock.json avec npm install, puis corrige ce qui casse. ` +
+              (p.major
+                ? `${p.fixed} est une version majeure de ${p.pkg} : n'ajoute pas d'overrides pour la forcer, ${p.via} pourrait casser. Si aucune version de ${p.via} ne convient, dis-le-moi au lieu de forcer.`
+                : `Si aucune version de ${p.via} ne convient, ajoute un overrides vers ${p.fixed} dans package.json et lance les tests.`)
+            : `La dépendance ${p.pkg} est en version ${p.version}, qui a des vulnérabilités connues (${p.ids}). Mets-la à jour vers ${p.fixed} ou plus récent : si c'est une dépendance directe, change sa version dans package.json ; sinon, mets à jour le paquet qui l'installe (npm ls ${p.pkg})${p.major ? ` (pas d'overrides : ${p.fixed} est une version majeure, risque de casse)` : ' ou ajoute un overrides dans package.json'}. Régénère package-lock.json avec npm install, puis corrige ce qui casse si l'API a changé.`,
+    },
+    'deps.devToolInProd': {
+      title: (p) => `${p.pkg} est rangé dans les dépendances de production`,
+      why: (p) =>
+        `${p.pkg} est un outil de développement (tests, lint, formatage…), mais package.json le liste dans "dependencies" au lieu de "devDependencies". Il est donc installé en production avec ses propres dépendances, dont ${p.count === '1' ? 'une a' : `${p.count} ont`} des failles connues (${p.pkgs}). Elles ne touchent pas votre appli, mais alourdissent l'installation et brouillent les audits.`,
+      fix: (p) =>
+        `Dans package.json, déplacez la ligne de ${p.pkg} de "dependencies" vers "devDependencies" (même version), puis lancez npm install. Ces failles disparaîtront du rapport.`,
+      prompt: (p) =>
+        `Dans package.json, ${p.pkg} est dans "dependencies" alors que c'est un outil de développement. Déplace-le dans "devDependencies" sans changer sa version, lance npm install, puis vérifie que l'appli et les tests fonctionnent toujours.`,
     },
   },
   ui: {

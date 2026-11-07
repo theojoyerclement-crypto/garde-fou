@@ -195,13 +195,35 @@ export const en: Messages = {
       why: () =>
         'This version of a production dependency has published vulnerabilities (OSV database). Attackers look for exactly these known versions: they are often the first flaws exploited.',
       fix: (p) =>
-        p.fixed
-          ? `Upgrade ${p.pkg} to ${p.fixed} or later. If it is not a direct dependency, upgrade the package that pulls it in (npm ls ${p.pkg}) or add an "overrides" entry to package.json.`
-          : `No fixed version is published: replace ${p.pkg} with a maintained alternative, or make sure your code does not use the vulnerable part (https://osv.dev/vulnerability/${p.id}).`,
+        !p.fixed
+          ? `No fixed version is published${p.via ? ` (${p.pkg} is installed by ${p.via})` : ''}: replace ${p.via || p.pkg} with a maintained alternative, or make sure your code does not use the vulnerable part (https://osv.dev/vulnerability/${p.id}).`
+          : p.via
+            ? `${p.pkg} is not in your package.json: ${p.via} installs it. Upgrade ${p.via} (npm update ${p.viaCmd}, or its latest version), then check with npm ls ${p.pkg} that ${p.pkg} is at ${p.fixed} or later. ` +
+              (p.major
+                ? `Careful: ${p.fixed} is a new major version of ${p.pkg} (${p.version} → ${p.fixed}). Do not force it with "overrides": ${p.via} may not be compatible and the app could break. If no version of ${p.via} ships it yet, wait for its update.`
+                : `If no version of ${p.via} ships it yet, add an "overrides" entry for ${p.fixed} to package.json (same major version), then test the app.`)
+            : `Upgrade ${p.pkg} to ${p.fixed} or later. ` +
+              (p.major
+                ? `It is a new major version (${p.version} → ${p.fixed}): read its migration notes, the API may have changed. If ${p.pkg} is not in your package.json, upgrade the package that pulls it in (npm ls ${p.pkg}) rather than forcing this version with "overrides".`
+                : `If it is not a direct dependency, upgrade the package that pulls it in (npm ls ${p.pkg}) or add an "overrides" entry to package.json.`),
       prompt: (p) =>
-        p.fixed
-          ? `The dependency ${p.pkg} is at version ${p.version}, which has known vulnerabilities (${p.ids}). Upgrade it to ${p.fixed} or later: if it is a direct dependency, change its version in package.json; otherwise upgrade the package that pulls it in (npm ls ${p.pkg}) or add an overrides entry to package.json. Regenerate package-lock.json with npm install, then fix whatever breaks if the API changed.`
-          : `The dependency ${p.pkg}@${p.version} has known vulnerabilities (${p.ids}) and no fixed version. Find where it is used (npm ls ${p.pkg}), suggest a maintained alternative and do the migration if it is simple.`,
+        !p.fixed
+          ? `The dependency ${p.pkg}@${p.version} has known vulnerabilities (${p.ids}) and no fixed version${p.via ? `. It is installed by ${p.via}` : ''}. Find where it is used (npm ls ${p.pkg}), suggest a maintained alternative and do the migration if it is simple.`
+          : p.via
+            ? `The dependency ${p.pkg}@${p.version} has known vulnerabilities (${p.ids}), fixed in ${p.fixed}. It is not in package.json: ${p.via} installs it. Upgrade ${p.via} to a version that ships ${p.pkg} ${p.fixed} or later (check with npm ls ${p.pkg}), regenerate package-lock.json with npm install, then fix whatever breaks. ` +
+              (p.major
+                ? `${p.fixed} is a major version of ${p.pkg}: do not add an overrides entry to force it, ${p.via} could break. If no version of ${p.via} works, tell me instead of forcing it.`
+                : `If no version of ${p.via} works, add an overrides entry for ${p.fixed} to package.json and run the tests.`)
+            : `The dependency ${p.pkg} is at version ${p.version}, which has known vulnerabilities (${p.ids}). Upgrade it to ${p.fixed} or later: if it is a direct dependency, change its version in package.json; otherwise upgrade the package that pulls it in (npm ls ${p.pkg})${p.major ? ` (no overrides: ${p.fixed} is a major version, it could break things)` : ' or add an overrides entry to package.json'}. Regenerate package-lock.json with npm install, then fix whatever breaks if the API changed.`,
+    },
+    'deps.devToolInProd': {
+      title: (p) => `${p.pkg} is listed as a production dependency`,
+      why: (p) =>
+        `${p.pkg} is a development tool (tests, linting, formatting…), but package.json lists it in "dependencies" instead of "devDependencies". It is therefore installed in production with its own dependencies, ${p.count === '1' ? 'one of which has' : `${p.count} of which have`} known vulnerabilities (${p.pkgs}). They do not affect your app, but they bloat the install and muddy security audits.`,
+      fix: (p) =>
+        `In package.json, move the ${p.pkg} line from "dependencies" to "devDependencies" (same version), then run npm install. These vulnerabilities will leave the report.`,
+      prompt: (p) =>
+        `In package.json, ${p.pkg} is in "dependencies" although it is a development tool. Move it to "devDependencies" without changing its version, run npm install, then check that the app and the tests still work.`,
     },
   },
   ui: {

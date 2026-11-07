@@ -20,7 +20,8 @@ export type MessageId =
   | 'firebase.testMode'
   | 'api.noAuthPrivileged'
   | 'api.noAuthAI'
-  | 'deps.vulnerable';
+  | 'deps.vulnerable'
+  | 'deps.devToolInProd';
 
 export interface Finding {
   ruleId: string;

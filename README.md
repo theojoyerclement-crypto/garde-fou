@@ -21,7 +21,8 @@ qui coûtent le plus cher :
 | Policy Supabase `using (true)` en update / delete / all | élevé |
 | Règles Firebase : lecture de toute la base sans condition, ou « mode test » | élevé |
 | Route API (Next.js, Express, Supabase Edge Function) qui utilise la clé `service_role`, un SDK admin, une écriture en base ou une **API d'IA payante** sans vérifier qui l'appelle | élevé |
-| Dépendance de production avec une **vulnérabilité connue** (base [OSV](https://osv.dev)) | selon l'avis |
+| Dépendance de production avec une **vulnérabilité connue** (base [OSV](https://osv.dev)), avec le paquet parent à mettre à jour ; ignorées : dépendances de dev et outils de build (`@expo/cli`, `metro`…) | selon l'avis |
+| Outil de dev (jest, eslint…) rangé dans `dependencies` et qui amène des failles | faible |
 | Fichier `.env` commité, ou présent dans l'historique git | élevé |
 | Variable sensible (`…_SECRET`, `…_SERVICE_ROLE_KEY`, `…_OPENAI_API_KEY`…) avec un préfixe public | élevé |
 | Policy Supabase `with check (true)` en insert | moyen |
@@ -117,7 +118,7 @@ npm run build
 ```
 
 Fixtures : une app vulnérable par règle (`fixtures/vulnerable-app`, `supabase-rls`, `firebase`,
-`api-auth`, `dependencies`) et `fixtures/clean-app`, sosie sécurisé de chaque cas (0 problème attendu).
+`api-auth`, `dependencies`, `dependencies-expo`, `dependencies-devtool`) et `fixtures/clean-app`, sosie sécurisé de chaque cas (0 problème attendu).
 
 Voir [CLAUDE.md](./CLAUDE.md) pour l'architecture et les règles de contribution.
 

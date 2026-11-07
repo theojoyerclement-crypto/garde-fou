@@ -9,7 +9,15 @@ afterAll(cleanupTempDirs);
 /** Same advisories as the vulnerable fixture: the clean app's versions are past every fix. */
 const fakeOsv: OsvClient = {
   async query(pkgs) {
-    const db: Record<string, string> = { lodash: '4.17.21', minimist: '1.2.6', ms: '2.0.0', semver: '5.7.2' };
+    // zod (under expo > @expo/cli) and minimatch (under jest, dev) are vulnerable but never shipped.
+    const db: Record<string, string> = {
+      lodash: '4.17.21',
+      minimist: '1.2.6',
+      ms: '2.0.0',
+      semver: '5.7.2',
+      zod: '4.6.6',
+      minimatch: '11.0.1',
+    };
     return pkgs.map((p) => {
       const fixed = db[p.name];
       return fixed && compareSemver(p.version, fixed) < 0 ? [{ id: `GHSA-fake-${p.name}`, severity: 'high', fixed }] : [];
