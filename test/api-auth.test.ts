@@ -1,5 +1,7 @@
+import { cpSync } from 'node:fs';
+import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { audit, cleanupTempDirs, copyNamedFixture, makeTempDir, writeFiles } from './helpers';
+import { audit, cleanupTempDirs, copyNamedFixture, fixturesDir, makeTempDir, writeFiles } from './helpers';
 
 afterAll(cleanupTempDirs);
 
@@ -90,5 +92,53 @@ describe('api-auth false positives', () => {
         'scripts/seed.js': "const express = require('express');\nconst k = process.env.SUPABASE_SERVICE_ROLE_KEY;",
       }),
     ).toEqual([]);
+  });
+});
+
+describe('api-auth when several projects are scanned at once', () => {
+  it('detects its fixture when the whole fixtures/ folder is scanned', async () => {
+    const parent = makeTempDir();
+    for (const n of ['api-auth', 'clean-app', 'supabase-rls', 'firebase', 'dependencies']) {
+      cpSync(path.join(fixturesDir, n), path.join(parent, n), { recursive: true });
+    }
+    const found = (await audit(parent)).findings.filter((f) => f.ruleId === 'api-auth');
+    expect(found).toHaveLength(6);
+    for (const f of found) expect(f.file?.startsWith('api-auth/')).toBe(true);
+  });
+
+  it('judges "public by design" on the route and file name, not on parent folders', async () => {
+    const flagged = await findingsFor({
+      'auth-service/app/api/chat/route.ts': AI_ROUTE,
+      'packages/webhooks-ui/app/api/ask/route.ts': AI_ROUTE,
+    });
+    expect(flagged.map((f) => f.file).sort()).toEqual([
+      'auth-service/app/api/chat/route.ts',
+      'packages/webhooks-ui/app/api/ask/route.ts',
+    ]);
+    expect(await findingsFor({ 'pages/api/stripe-webhook.ts': "import OpenAI from 'openai';\nexport default async function h() { await new OpenAI().models.list(); }" })).toEqual([]);
+  });
+
+  it('a Next.js middleware only protects its own app', async () => {
+    const found = await findingsFor({
+      'apps/a/middleware.ts': 'export function middleware() {}',
+      'apps/a/app/api/x/route.ts': AI_ROUTE,
+      'apps/b/app/api/x/route.ts': AI_ROUTE,
+      'apps/c/src/middleware.ts': 'export function middleware() {}',
+      'apps/c/src/app/api/x/route.ts': AI_ROUTE,
+    });
+    expect(found.map((f) => f.file)).toEqual(['apps/b/app/api/x/route.ts']);
+  });
+
+  it('an Express auth middleware only protects its own project', async () => {
+    const route =
+      "const express = require('express');\nconst OpenAI = require('openai');\nrouter.post('/ask', async (req, res) => res.json(await new OpenAI().models.list()));";
+    const found = await findingsFor({
+      'svc-a/package.json': '{}',
+      'svc-a/app.js': "const express = require('express');\napp.use(requireAuth);",
+      'svc-a/routes.js': route,
+      'svc-b/package.json': '{}',
+      'svc-b/routes.js': route,
+    });
+    expect(found.map((f) => f.file)).toEqual(['svc-b/routes.js']);
   });
 });

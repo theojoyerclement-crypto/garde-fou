@@ -162,6 +162,21 @@ describe('supabase-rls detection is not bypassed', () => {
   });
 });
 
+describe('supabase-rls with several projects', () => {
+  it('replays the migrations of each project separately', async () => {
+    const found = await findingsFor({
+      'a/supabase/migrations/1.sql': 'create table public.t (id int);\nalter table public.t enable row level security;',
+      'b/supabase/migrations/1.sql': 'create table public.t (id int);',
+      'b/supabase/migrations/2.sql': 'create table public.u (id int);',
+      'a/supabase/migrations/3.sql': 'alter table public.u enable row level security;',
+    });
+    expect(found.map((f) => `${f.file} ${f.params.table}`).sort()).toEqual([
+      'b/supabase/migrations/1.sql t',
+      'b/supabase/migrations/2.sql u',
+    ]);
+  });
+});
+
 describe('splitSql', () => {
   it('keeps offsets and splits on top-level semicolons only', () => {
     const src = 'create policy "a;b" on t using (true);\n-- x;\nselect 1';

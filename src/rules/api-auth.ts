@@ -28,7 +28,26 @@ const CODE_FILE = /\.(?:[cm]?[jt]sx?)$/i;
 const NEXT_APP_ROUTE = /(?:^|\/)app\/(?:(.+)\/)?route\.(?:[cm]?[jt]s)$/i;
 const NEXT_PAGES_API = /(?:^|\/)pages\/(api(?:\/.+)?)\.(?:[cm]?[jt]sx?)$/i;
 const EDGE_FUNCTION = /(?:^|\/)supabase\/functions\/([^/_][^/]*)\/index\.(?:[cm]?[jt]s)$/i;
-const NEXT_MIDDLEWARE = /^(?:src\/)?(?:middleware|proxy)\.(?:[cm]?[jt]s)$/i;
+/** `<app dir>/middleware.ts`, `<app dir>/src/proxy.ts`… → group 1 = app dir ('' or 'apps/web/'). */
+const NEXT_MIDDLEWARE_ANYWHERE = /^((?:[^/]+\/)*?)(?:src\/)?(?:middleware|proxy)\.(?:[cm]?[jt]s)$/i;
+
+/** Directory of the Next.js app a route file belongs to ('' or 'apps/web/'). */
+export function nextAppDir(rel: string): string {
+  const m = /^((?:[^/]+\/)*?)(?:src\/)?(?:app|pages)\//.exec(rel);
+  return m?.[1] ?? '';
+}
+
+/** Directories holding a package.json, deepest first ('' = scan root). */
+export function projectRoots(rels: readonly string[]): string[] {
+  const dirs = rels
+    .filter((r) => basenameOf(r) === 'package.json')
+    .map((r) => r.slice(0, r.length - 'package.json'.length));
+  return [...new Set(['', ...dirs])].sort((a, b) => b.length - a.length);
+}
+
+export function projectOf(rel: string, roots: readonly string[]): string {
+  return roots.find((r) => rel.startsWith(r)) ?? '';
+}
 
 /** Path segments of routes that are public by design. */
 const PUBLIC_BY_DESIGN =
@@ -172,10 +191,18 @@ export const apiAuthRule: Rule = {
     };
     const sources = ctx.files.filter((f) => !f.gitignored && CODE_FILE.test(basenameOf(f.rel)));
 
-    const nextHasMiddleware = sources.some((f) => NEXT_MIDDLEWARE.test(f.rel));
-    const expressHasAuthMiddleware = sources.some(
-      (f) => /\.use\s*\(/.test(f.content) && EXPRESS_AUTH_USE.test(codeOf(f)),
-    );
+    // Middlewares only protect their own app: a scan may cover several projects
+    // (monorepo, parent folder), so everything is scoped by directory.
+    const projects = projectRoots(ctx.files.map((f) => f.rel));
+    const middlewareDirs = new Set<string>();
+    const expressAuthProjects = new Set<string>();
+    for (const f of sources) {
+      const mw = NEXT_MIDDLEWARE_ANYWHERE.exec(f.rel);
+      if (mw) middlewareDirs.add(mw[1] ?? '');
+      if (/\.use\s*\(/.test(f.content) && EXPRESS_AUTH_USE.test(codeOf(f))) {
+        expressAuthProjects.add(projectOf(f.rel, projects));
+      }
+    }
 
     const findings: Finding[] = [];
     for (const f of sources) {
@@ -188,9 +215,11 @@ export const apiAuthRule: Rule = {
         edgeRoute(f.rel, c) ??
         (NEXT_APP_ROUTE.test(f.rel) || NEXT_PAGES_API.test(f.rel) ? null : expressRoute(c));
       if (!route) continue;
-      if (route.framework === 'Next.js' && nextHasMiddleware) continue;
-      if (route.framework === 'Express' && expressHasAuthMiddleware) continue;
-      if (PUBLIC_BY_DESIGN.test(f.rel) || PUBLIC_BY_DESIGN.test(route.route)) continue;
+      if (route.framework === 'Next.js' && middlewareDirs.has(nextAppDir(f.rel))) continue;
+      if (route.framework === 'Express' && expressAuthProjects.has(projectOf(f.rel, projects))) continue;
+      // Public by design: judged on the route and the file name, never on the
+      // folders above (a project folder named "api-auth" says nothing).
+      if (PUBLIC_BY_DESIGN.test(route.route) || PUBLIC_BY_DESIGN.test(basenameOf(f.rel))) continue;
       if (AUTH_MARKER.test(c)) continue;
 
       const privileged = PRIVILEGED.some((re) => re.test(c));

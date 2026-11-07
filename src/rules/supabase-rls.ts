@@ -272,55 +272,70 @@ export function isSupabaseSql(rel: string): boolean {
   return /(^|\/)supabase\/.+\.sql$/i.test(rel);
 }
 
+/** One Supabase project = the folder that holds its `supabase/` directory. */
+export function supabaseProjectOf(rel: string): string {
+  const m = /(^|\/)supabase\//.exec(rel);
+  return m ? rel.slice(0, m.index + (m[1] ?? '').length) : '';
+}
+
 export const supabaseRlsRule: Rule = {
   id: 'supabase-rls',
   run(ctx: ScanContext): Finding[] {
-    const sqlFiles = ctx.files
-      .filter((f) => !f.gitignored && isSupabaseSql(f.rel))
-      .sort((a, b) => a.rel.localeCompare(b.rel));
-    if (sqlFiles.length === 0) return [];
-
-    const tables = new Map<string, TableState>();
-    const policies = new Map<string, OpenPolicy>();
-
-    for (const f of sqlFiles) replay(f, tables, policies);
-
-    const findings: Finding[] = [];
-    for (const [key, t] of tables) {
-      if (t.rls || !t.loc) continue;
-      if (!key.startsWith('public.')) continue;
-      if (isClosedToApi(t)) continue;
-      findings.push({
-        ruleId: 'supabase-rls',
-        severity: 'critical',
-        messageId: 'supabase.noRls',
-        params: { table: displayTable(key) },
-        file: t.loc.file,
-        line: t.loc.line,
-      });
+    // Migrations of different projects (monorepo, parent folder) are replayed
+    // separately: a table enabled in one project says nothing about another.
+    const projects = new Map<string, ScannedFile[]>();
+    for (const f of ctx.files) {
+      if (f.gitignored || !isSupabaseSql(f.rel)) continue;
+      const key = supabaseProjectOf(f.rel);
+      projects.set(key, [...(projects.get(key) ?? []), f]);
     }
-
-    for (const p of policies.values()) {
-      const t = tables.get(p.table);
-      if (t && !t.rls && t.loc) continue; // the table itself is already reported
-      const params = {
-        table: displayTable(p.table),
-        policy: p.policy,
-        command: p.command.toUpperCase(),
-        roles: p.roles.join(', '),
-      };
-      const base = { ruleId: 'supabase-rls', params, file: p.loc.file, line: p.loc.line };
-      if (p.command === 'select') {
-        findings.push({ ...base, severity: 'low', messageId: 'supabase.openReadPolicy' });
-      } else if (p.command === 'insert') {
-        findings.push({ ...base, severity: 'medium', messageId: 'supabase.openInsertPolicy' });
-      } else {
-        findings.push({ ...base, severity: 'high', messageId: 'supabase.openWritePolicy' });
-      }
-    }
-    return findings;
+    return [...projects.values()].flatMap((files) =>
+      checkProject([...files].sort((a, b) => a.rel.localeCompare(b.rel))),
+    );
   },
 };
+
+function checkProject(sqlFiles: ScannedFile[]): Finding[] {
+  const tables = new Map<string, TableState>();
+  const policies = new Map<string, OpenPolicy>();
+
+  for (const f of sqlFiles) replay(f, tables, policies);
+
+  const findings: Finding[] = [];
+  for (const [key, t] of tables) {
+    if (t.rls || !t.loc) continue;
+    if (!key.startsWith('public.')) continue;
+    if (isClosedToApi(t)) continue;
+    findings.push({
+      ruleId: 'supabase-rls',
+      severity: 'critical',
+      messageId: 'supabase.noRls',
+      params: { table: displayTable(key) },
+      file: t.loc.file,
+      line: t.loc.line,
+    });
+  }
+
+  for (const p of policies.values()) {
+    const t = tables.get(p.table);
+    if (t && !t.rls && t.loc) continue; // the table itself is already reported
+    const params = {
+      table: displayTable(p.table),
+      policy: p.policy,
+      command: p.command.toUpperCase(),
+      roles: p.roles.join(', '),
+    };
+    const base = { ruleId: 'supabase-rls', params, file: p.loc.file, line: p.loc.line };
+    if (p.command === 'select') {
+      findings.push({ ...base, severity: 'low', messageId: 'supabase.openReadPolicy' });
+    } else if (p.command === 'insert') {
+      findings.push({ ...base, severity: 'medium', messageId: 'supabase.openInsertPolicy' });
+    } else {
+      findings.push({ ...base, severity: 'high', messageId: 'supabase.openWritePolicy' });
+    }
+  }
+  return findings;
+}
 
 function replay(
   f: ScannedFile,
