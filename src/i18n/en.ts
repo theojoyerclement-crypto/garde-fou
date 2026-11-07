@@ -1,5 +1,46 @@
 import type { Messages } from './types';
 
+type P = Record<string, string>;
+
+/** "the anon role", "the anon and authenticated roles", "the public role (everyone)". */
+function roles(raw: string | undefined): string {
+  const names = (raw ?? 'public')
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean);
+  if (names.length <= 1) {
+    const n = names[0] ?? 'public';
+    return n === 'public' ? 'the public role (everyone)' : `the ${n} role`;
+  }
+  return `the ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} roles`;
+}
+
+/** What a policy command lets people do. */
+function action(command: string | undefined): string {
+  if (command === 'UPDATE') return 'change';
+  if (command === 'DELETE') return 'delete';
+  return 'read, change or delete';
+}
+
+/** DELETE policies only take `using`; UPDATE / ALL need `using` and `with check`. */
+function clauses(command: string | undefined): string {
+  return command === 'DELETE'
+    ? 'with a using clause only (with check does not apply to DELETE)'
+    : 'with a using clause and a matching with check clause';
+}
+
+/** Firestore has collections; Cloud Storage and the Realtime Database have paths. */
+function unit(p: P): { one: string; many: string } {
+  return p.service === 'Firestore' ? { one: 'collection', many: 'collections' } : { one: 'path', many: 'paths' };
+}
+
+/** Rules syntax: the Realtime Database uses auth / auth.uid, the others request.auth. */
+function auth(p: P): { signedIn: string; owner: string; uid: string } {
+  return p.service === 'Realtime Database'
+    ? { signedIn: 'auth != null', owner: 'auth.uid === $uid', uid: 'auth.uid' }
+    : { signedIn: 'request.auth != null', owner: 'request.auth.uid == userId', uid: 'request.auth.uid' };
+}
+
 export const en: Messages = {
   severity: { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' },
   findings: {
@@ -76,11 +117,11 @@ export const en: Messages = {
     'supabase.openWritePolicy': {
       title: (p) => `Policy "${p.policy}": anyone can ${p.command} on ${p.table}`,
       why: (p) =>
-        `This policy's condition is "true": it checks nothing. The ${p.roles} role can therefore change or delete any row, other users' rows included (the anon key is public).`,
-      fix: () =>
-        'In a new migration, drop the policy and recreate it with a user-bound condition, for example "auth.uid() = user_id".',
+        `This policy's condition is "true": it checks nothing. Open to ${roles(p.roles)}, it lets them ${action(p.command)} any row, other users' rows included (the anon key is public).`,
+      fix: (p) =>
+        `In a new migration, drop the policy and recreate it with a user-bound condition, for example "using (auth.uid() = user_id)"${p.command === 'DELETE' ? '' : ' and the same "with check"'}.`,
       prompt: (p) =>
-        `In Supabase, the policy "${p.policy}" on table ${p.table} (${p.location}) allows ${p.command} with the condition true, so anyone can change or delete other users' rows. Create a new migration that drops this policy and replaces it with one that limits ${p.command} to the signed-in user's rows (auth.uid() equal to the owner column), with a matching with check clause. Do not edit migrations that were already applied.`,
+        `In Supabase, the policy "${p.policy}" on table ${p.table} (${p.location}) allows ${p.command} with the condition true, so anyone can ${action(p.command)} other users' rows. Create a new migration that drops this policy and replaces it with one that limits ${p.command} to the signed-in user's rows (auth.uid() equal to the owner column), ${clauses(p.command)}. Do not edit migrations that were already applied.`,
     },
     'supabase.openInsertPolicy': {
       title: (p) => `Policy "${p.policy}": anyone can add rows to ${p.table}`,
@@ -94,7 +135,7 @@ export const en: Messages = {
     'supabase.openReadPolicy': {
       title: (p) => `Policy "${p.policy}": ${p.table} is readable by everyone`,
       why: (p) =>
-        `The "true" condition makes every row of ${p.table} readable by the ${p.roles} role. Fine for public content (posts, products), not for personal data.`,
+        `The "true" condition makes every row of ${p.table} readable by ${roles(p.roles)}. Fine for public content (posts, products), not for personal data.`,
       fix: () =>
         'Make sure this table holds no sensitive column (email, phone, address, private data). Otherwise restrict reads with "auth.uid() = user_id".',
       prompt: (p) =>
@@ -104,26 +145,31 @@ export const en: Messages = {
       title: (p) => `${p.service}: anyone can write to ${p.path}`,
       why: () =>
         'The rule allows writes with no condition: anyone on the Internet can change, overwrite or erase this data, without even signing in.',
-      fix: () =>
-        'Require at least a signed-in user ("request.auth != null") and, better, that the user owns the data ("request.auth.uid == userId").',
+      fix: (p) =>
+        `Require at least a signed-in user ("${auth(p).signedIn}") and, better, that the user owns the data ("${auth(p).owner}").`,
       prompt: (p) =>
-        `The ${p.service} security rules (${p.location}) let anyone write to ${p.path} with no condition. Rewrite these rules so that only a signed-in user can write, and only to their own data (request.auth != null and request.auth.uid equal to the owner id; for the Realtime Database: auth != null and auth.uid === $uid). Keep the rest of the app working and list the screens that might depend on it.`,
+        `The ${p.service} security rules (${p.location}) let anyone write to ${p.path} with no condition. Rewrite these rules so that only a signed-in user can write, and only to their own data (${auth(p).signedIn} and ${auth(p).owner}). Keep the rest of the app working and list the screens that might depend on it.`,
     },
     'firebase.openRead': {
-      title: (p) => `${p.service}: the whole database is readable by everyone`,
-      why: () =>
-        'The rule grants read access to all data with no condition: anyone can download the entire database (accounts, messages, orders…).',
-      fix: () => 'Remove the global rule and open reads collection by collection, only for what is truly public.',
+      title: (p) =>
+        p.service === 'Cloud Storage'
+          ? `${p.service}: every file is readable by everyone`
+          : `${p.service}: the whole database is readable by everyone`,
+      why: (p) =>
+        p.service === 'Cloud Storage'
+          ? 'The rule grants read access to every file with no condition: anyone can download everything stored (photos, documents, invoices…).'
+          : 'The rule grants read access to all data with no condition: anyone can download the entire database (accounts, messages, orders…).',
+      fix: (p) => `Remove the global rule and open reads ${unit(p).one} by ${unit(p).one}, only for what is truly public.`,
       prompt: (p) =>
-        `The ${p.service} rules (${p.location}) allow reading the whole database (${p.path}) with no condition. Replace this global rule with per-collection rules: public reads only for truly public data, and for everything else reads restricted to the signed-in owner (request.auth.uid). List the collections and what you chose for each.`,
+        `The ${p.service} rules (${p.location}) allow reading everything (${p.path}) with no condition. Replace this global rule with per-${unit(p).one} rules: public reads only for truly public data, and for everything else reads restricted to the signed-in owner (${auth(p).owner}). List the ${unit(p).many} and what you chose for each.`,
     },
     'firebase.testMode': {
       title: (p) => `${p.service}: "test mode" rules open to everyone until a date`,
       why: () =>
         'These are the default test-mode rules: until the given date, anyone can read and change the data. After that, the app stops working.',
-      fix: () => 'Replace them with real rules based on request.auth before going live.',
+      fix: (p) => `Replace them with real rules based on ${auth(p).uid} before going live.`,
       prompt: (p) =>
-        `The ${p.service} rules (${p.location}) are still the test-mode ones (request.time < timestamp.date(...)): anyone can read and write. Write real security rules: reads and writes restricted to the signed-in user on their own data (request.auth.uid), public reads only for truly public collections. Explain each rule.`,
+        `The ${p.service} rules (${p.location}) are still the test-mode ones (request.time < timestamp.date(...)): anyone can read and write. Write real security rules: reads and writes restricted to the signed-in user on their own data (${auth(p).owner}), public reads only for truly public ${unit(p).many}. Explain each rule.`,
     },
     'api.noAuthPrivileged': {
       title: (p) => `Route ${p.route} does not check who is calling (${p.framework})`,

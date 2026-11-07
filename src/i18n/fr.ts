@@ -1,5 +1,44 @@
 import type { Messages } from './types';
 
+type P = Record<string, string>;
+
+/** « le rôle anon », « les rôles anon et authenticated », « le rôle public (tout le monde) ». */
+function roles(raw: string | undefined): string {
+  const names = (raw ?? 'public')
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((r) => (r === 'public' ? 'public (tout le monde)' : r));
+  if (names.length <= 1) return `le rôle ${names[0] ?? 'public (tout le monde)'}`;
+  return `les rôles ${names.slice(0, -1).join(', ')} et ${names[names.length - 1]}`;
+}
+
+/** What a policy command lets people do. */
+function action(command: string | undefined): string {
+  if (command === 'UPDATE') return 'modifier';
+  if (command === 'DELETE') return 'supprimer';
+  return 'lire, modifier ou supprimer';
+}
+
+/** DELETE policies only take `using`; UPDATE / ALL need `using` and `with check`. */
+function clauses(command: string | undefined): string {
+  return command === 'DELETE'
+    ? 'avec une clause using uniquement (with check ne s’applique pas à DELETE)'
+    : 'avec une clause using et une clause with check équivalente';
+}
+
+/** Firestore has collections; Cloud Storage and the Realtime Database have paths. */
+function unit(p: P): { one: string; many: string } {
+  return p.service === 'Firestore' ? { one: 'collection', many: 'collections' } : { one: 'chemin', many: 'chemins' };
+}
+
+/** Rules syntax: the Realtime Database uses auth / auth.uid, the others request.auth. */
+function auth(p: P): { signedIn: string; owner: string; uid: string } {
+  return p.service === 'Realtime Database'
+    ? { signedIn: 'auth != null', owner: 'auth.uid === $uid', uid: 'auth.uid' }
+    : { signedIn: 'request.auth != null', owner: 'request.auth.uid == userId', uid: 'request.auth.uid' };
+}
+
 export const fr: Messages = {
   severity: { critical: 'CRITIQUE', high: 'ÉLEVÉ', medium: 'MOYEN', low: 'FAIBLE' },
   findings: {
@@ -77,11 +116,11 @@ export const fr: Messages = {
     'supabase.openWritePolicy': {
       title: (p) => `Policy « ${p.policy} » : tout le monde peut faire ${p.command} sur ${p.table}`,
       why: (p) =>
-        `La condition de cette policy est « true » : elle ne vérifie rien. Le rôle ${p.roles} peut donc modifier ou supprimer n'importe quelle ligne, y compris celles des autres utilisateurs (la clé anon est publique).`,
-      fix: () =>
-        "Dans une nouvelle migration, supprimez la policy (drop policy) et recréez-la avec une condition liée à l'utilisateur, par exemple « auth.uid() = user_id ».",
+        `La condition de cette policy est « true » : elle ne vérifie rien. Ouverte à ${roles(p.roles)}, elle permet de ${action(p.command)} n'importe quelle ligne, y compris celles des autres utilisateurs (la clé anon est publique).`,
+      fix: (p) =>
+        `Dans une nouvelle migration, supprimez la policy (drop policy) et recréez-la avec une condition liée à l'utilisateur, par exemple « using (auth.uid() = user_id) »${p.command === 'DELETE' ? '' : ' et le même « with check »'}.`,
       prompt: (p) =>
-        `Dans Supabase, la policy « ${p.policy} » de la table ${p.table} (${p.location}) autorise ${p.command} avec la condition true, donc n'importe qui peut modifier ou supprimer les lignes des autres. Crée une nouvelle migration qui supprime cette policy et la remplace par une policy qui limite ${p.command} aux lignes de l'utilisateur connecté (auth.uid() égal à la colonne propriétaire), avec une clause with check équivalente. Ne modifie pas les migrations déjà appliquées.`,
+        `Dans Supabase, la policy « ${p.policy} » de la table ${p.table} (${p.location}) autorise ${p.command} avec la condition true, donc n'importe qui peut ${action(p.command)} les lignes des autres. Crée une nouvelle migration qui supprime cette policy et la remplace par une policy qui limite ${p.command} aux lignes de l'utilisateur connecté (auth.uid() égal à la colonne propriétaire), ${clauses(p.command)}. Ne modifie pas les migrations déjà appliquées.`,
     },
     'supabase.openInsertPolicy': {
       title: (p) => `Policy « ${p.policy} » : tout le monde peut ajouter des lignes dans ${p.table}`,
@@ -95,7 +134,7 @@ export const fr: Messages = {
     'supabase.openReadPolicy': {
       title: (p) => `Policy « ${p.policy} » : ${p.table} est lisible par tout le monde`,
       why: (p) =>
-        `La condition « true » rend toutes les lignes de ${p.table} lisibles par le rôle ${p.roles}. C'est normal pour du contenu public (articles, produits), pas pour des données personnelles.`,
+        `La condition « true » rend toutes les lignes de ${p.table} lisibles par ${roles(p.roles)}. C'est normal pour du contenu public (articles, produits), pas pour des données personnelles.`,
       fix: () =>
         "Vérifiez qu'aucune colonne sensible (e-mail, téléphone, adresse, données privées) n'est dans cette table. Sinon, limitez la lecture avec « auth.uid() = user_id ».",
       prompt: (p) =>
@@ -105,27 +144,32 @@ export const fr: Messages = {
       title: (p) => `${p.service} : écriture ouverte à tout le monde sur ${p.path}`,
       why: () =>
         "La règle autorise l'écriture sans aucune condition : n'importe qui sur Internet peut modifier, remplacer ou effacer ces données, sans même être connecté.",
-      fix: () =>
-        "Exigez au minimum une connexion (« request.auth != null ») et, mieux, que l'utilisateur soit le propriétaire de la donnée (« request.auth.uid == userId »).",
+      fix: (p) =>
+        `Exigez au minimum une connexion (« ${auth(p).signedIn} ») et, mieux, que l'utilisateur soit le propriétaire de la donnée (« ${auth(p).owner} »).`,
       prompt: (p) =>
-        `Les règles de sécurité ${p.service} (${p.location}) autorisent n'importe qui à écrire sur ${p.path} sans condition. Réécris ces règles pour que seul un utilisateur connecté puisse écrire, et uniquement dans ses propres données (request.auth != null et request.auth.uid égal à l'identifiant du propriétaire ; pour le Realtime Database : auth != null et auth.uid === $uid). Garde le reste du fonctionnement de l'app et liste-moi les écrans qui pourraient en dépendre.`,
+        `Les règles de sécurité ${p.service} (${p.location}) autorisent n'importe qui à écrire sur ${p.path} sans condition. Réécris ces règles pour que seul un utilisateur connecté puisse écrire, et uniquement dans ses propres données (${auth(p).signedIn} et ${auth(p).owner}). Garde le reste du fonctionnement de l'app et liste-moi les écrans qui pourraient en dépendre.`,
     },
     'firebase.openRead': {
-      title: (p) => `${p.service} : toute la base est lisible par tout le monde`,
-      why: () =>
-        "La règle donne accès en lecture à toutes les données, sans condition : n'importe qui peut télécharger la base complète (comptes, messages, commandes…).",
-      fix: () =>
-        'Supprimez la règle globale et ouvrez la lecture collection par collection, uniquement pour ce qui est vraiment public.',
+      title: (p) =>
+        p.service === 'Cloud Storage'
+          ? `${p.service} : tous les fichiers sont lisibles par tout le monde`
+          : `${p.service} : toute la base est lisible par tout le monde`,
+      why: (p) =>
+        p.service === 'Cloud Storage'
+          ? "La règle donne accès en lecture à tous les fichiers, sans condition : n'importe qui peut télécharger tout ce qui est stocké (photos, documents, factures…)."
+          : "La règle donne accès en lecture à toutes les données, sans condition : n'importe qui peut télécharger la base complète (comptes, messages, commandes…).",
+      fix: (p) =>
+        `Supprimez la règle globale et ouvrez la lecture ${unit(p).one} par ${unit(p).one}, uniquement pour ce qui est vraiment public.`,
       prompt: (p) =>
-        `Les règles ${p.service} (${p.location}) autorisent la lecture de toute la base (${p.path}) sans condition. Remplace cette règle globale par des règles par collection : lecture publique uniquement pour les données vraiment publiques, et pour le reste lecture réservée à l'utilisateur connecté propriétaire (request.auth.uid). Liste-moi les collections et ce que tu as choisi pour chacune.`,
+        `Les règles ${p.service} (${p.location}) autorisent la lecture de tout (${p.path}) sans condition. Remplace cette règle globale par des règles par ${unit(p).one} : lecture publique uniquement pour les données vraiment publiques, et pour le reste lecture réservée à l'utilisateur connecté propriétaire (${auth(p).owner}). Liste-moi les ${unit(p).many} et ce que tu as choisi pour chacun${unit(p).one === 'collection' ? 'e' : ''}.`,
     },
     'firebase.testMode': {
       title: (p) => `${p.service} : règles « mode test » ouvertes à tous jusqu'à une date`,
       why: () =>
         "Ce sont les règles par défaut du mode test : jusqu'à la date indiquée, tout le monde peut lire et modifier les données. Ensuite, l'app cessera de fonctionner.",
-      fix: () => 'Remplacez-les par de vraies règles basées sur request.auth avant la mise en ligne.',
+      fix: (p) => `Remplacez-les par de vraies règles basées sur ${auth(p).uid} avant la mise en ligne.`,
       prompt: (p) =>
-        `Les règles ${p.service} (${p.location}) sont encore celles du mode test (request.time < timestamp.date(...)) : tout le monde peut lire et écrire. Écris de vraies règles de sécurité : lecture et écriture réservées à l'utilisateur connecté sur ses propres données (request.auth.uid), lecture publique seulement pour les collections vraiment publiques. Explique-moi chaque règle.`,
+        `Les règles ${p.service} (${p.location}) sont encore celles du mode test (request.time < timestamp.date(...)) : tout le monde peut lire et écrire. Écris de vraies règles de sécurité : lecture et écriture réservées à l'utilisateur connecté sur ses propres données (${auth(p).owner}), lecture publique seulement pour les ${unit(p).many} vraiment publi${unit(p).one === 'collection' ? 'ques' : 'cs'}. Explique-moi chaque règle.`,
     },
     'api.noAuthPrivileged': {
       title: (p) => `Route ${p.route} sans vérification d'identité (${p.framework})`,
